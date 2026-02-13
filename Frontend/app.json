@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "VIT-AP BUS",
+    "slug": "vit-ap-bus",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "vit-ap bus",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "supportsTablet": true,
+    "extra": {
+      "apiUrl": "http://192.168.1.3:4000"
+    },
+    "ios": {
+      "bundleIdentifier": "com.vit-ap.transport",
+      "buildNumber": "1.0.0",
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.vitap.transport",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/icon.png",
+        "backgroundColor": "#FFFFFF"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-video",
+      "expo-audio",
+      "expo-font",
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

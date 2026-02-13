@@ -1,0 +1,157 @@
+{
+  "description": "Test payloads for POST /api/arrivals endpoint",
+  "examples": [
+    {
+      "name": "Record arrival at Kankipadu stop for VV1 route",
+      "method": "POST",
+      "url": "http://localhost:4000/api/arrivals",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "routeId": "VV1",
+        "busNumber": "AP16AB1234",
+        "stopName": "Kankipadu",
+        "scheduledTime": "07:25 AM",
+        "actualTime": "07:27 AM",
+        "location": {
+          "lat": 16.52746,
+          "lng": 80.628769
+        },
+        "occupancy": "medium",
+        "passengerCount": 25,
+        "driverNotes": "Normal traffic",
+        "weather": "clear",
+        "trafficCondition": "moderate"
+      }
+    },
+    {
+      "name": "Record arrival at Gosala stop for VV1 route",
+      "method": "POST",
+      "url": "http://localhost:4000/api/arrivals",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "routeId": "VV1",
+        "busNumber": "AP16AB1234",
+        "stopName": "Gosala",
+        "scheduledTime": "07:30 AM",
+        "actualTime": "07:32 AM",
+        "location": {
+          "lat": 16.5292,
+          "lng": 80.6310
+        },
+        "occupancy": "high",
+        "passengerCount": 45,
+        "driverNotes": "Heavy passenger load",
+        "weather": "clear",
+        "trafficCondition": "light"
+      }
+    },
+    {
+      "name": "Record arrival without timestamp (uses server timestamp)",
+      "method": "POST",
+      "url": "http://localhost:4000/api/arrivals",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "routeId": "VV1",
+        "busNumber": "AP16AB1234",
+        "stopName": "Edupugallu",
+        "scheduledTime": "07:32 AM",
+        "actualTime": "07:35 AM",
+        "location": {
+          "lat": 16.5282,
+          "lng": 80.6292
+        },
+        "occupancy": "low",
+        "passengerCount": 15
+      }
+    },
+    {
+      "name": "Record arrival with custom timestamp",
+      "method": "POST",
+      "url": "http://localhost:4000/api/arrivals",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "routeId": "VV1",
+        "busNumber": "AP16AB1234",
+        "stopName": "Penumaluru",
+        "scheduledTime": "07:40 AM",
+        "actualTime": "07:42 AM",
+        "arrivalTimestamp": "2024-01-15T07:42:00.000Z",
+        "location": {
+          "lat": 16.5120,
+          "lng": 80.6204
+        },
+        "occupancy": "medium",
+        "passengerCount": 30
+      }
+    }
+  ],
+  "endpoints": {
+    "recordArrival": {
+      "method": "POST",
+      "url": "/api/arrivals",
+      "description": "Records a new arrival. If arrivalTimestamp is not provided, server timestamp is used."
+    },
+    "getLatestArrivalsPerStop": {
+      "method": "GET",
+      "url": "/api/arrivals/routes/:routeId/arrivals",
+      "description": "Gets the latest arrival for each stop in a route",
+      "example": "GET /api/arrivals/routes/VV1/arrivals"
+    },
+    "getRouteArrivals": {
+      "method": "GET",
+      "url": "/api/arrivals/route/:routeId",
+      "description": "Gets all arrivals for a specific route",
+      "example": "GET /api/arrivals/route/VV1?limit=50&today=true"
+    }
+  },
+  "socketEvents": {
+    "clientToServer": {
+      "join-route": {
+        "event": "join-route",
+        "data": "routeId (string)",
+        "description": "Subscribe to real-time updates for a specific route"
+      },
+      "leave-route": {
+        "event": "leave-route",
+        "data": "routeId (string)",
+        "description": "Unsubscribe from real-time updates for a route"
+      }
+    },
+    "serverToClient": {
+      "arrival-update": {
+        "event": "arrival-update",
+        "data": {
+          "routeId": "string",
+          "busNumber": "string",
+          "stopName": "string",
+          "scheduledTime": "string",
+          "actualTime": "string",
+          "arrivalTimestamp": "ISO date string",
+          "delay": "number (minutes)",
+          "status": "on_time | delayed | early",
+          "location": {
+            "lat": "number",
+            "lng": "number"
+          },
+          "occupancy": "low | medium | high",
+          "passengerCount": "number"
+        },
+        "description": "Emitted when a new arrival is recorded for the subscribed route"
+      }
+    }
+  }
+}
+
+
+
+
+
+

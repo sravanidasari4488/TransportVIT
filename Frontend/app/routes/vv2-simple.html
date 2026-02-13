@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>VV-11 Live Bus Tracking</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    html, body, #map {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+    #info {
+      position: absolute;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.8);
+      color: #fff;
+      padding: 15px 20px;
+      border-radius: 10px;
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+      text-align: center;
+      z-index: 1000;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    .bus-icon {
+      background: #ff6b35;
+      border: 2px solid #fff;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="info">Fetching live location...</div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    let map, marker;
+    let isLive = false;
+
+    function initMap() {
+      // Initialize map centered at Vijayawada using OpenStreetMap
+      map = L.map('map').setView([16.5050, 80.6330], 13);
+      
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors'
+      }).addTo(map);
+
+      // Create a custom bus icon
+      const busIcon = L.divIcon({
+        className: 'bus-icon',
+        html: '🚌',
+        iconSize: [30, 30],
+        iconAnchor: [15, 15]
+      });
+
+      // Live bus marker
+      marker = L.marker([16.5050, 80.6330], { icon: busIcon }).addTo(map);
+
+      // Add route stops for VV2
+      const stops = [
+        { name: "Poranki Center", lat: 16.5032, lng: 80.6310 },
+        { name: "Thumu Center", lat: 16.5050, lng: 80.6330 },
+        { name: "Tadigadapa", lat: 16.5070, lng: 80.6350 },
+        { name: "KCP Colony", lat: 16.5090, lng: 80.6370 },
+        { name: "VR Siddartha", lat: 16.5110, lng: 80.6390 },
+        { name: "Bharath Petrol Pump", lat: 16.5130, lng: 80.6410 },
+        { name: "Kamayyathopu", lat: 16.5150, lng: 80.6430 },
+        { name: "Time Hospital", lat: 16.5170, lng: 80.6450 }
+      ];
+
+      // Add stop markers
+      stops.forEach(stop => {
+        L.marker([stop.lat, stop.lng])
+          .bindPopup(`<b>${stop.name}</b>`)
+          .addTo(map);
+      });
+
+      // Draw route line
+      const routeCoords = stops.map(stop => [stop.lat, stop.lng]);
+      L.polyline(routeCoords, { color: '#8B5CF6', weight: 4, opacity: 0.7 }).addTo(map);
+
+      updateLocation();
+      setInterval(updateLocation, 5000); // refresh every 5s
+    }
+
+    async function updateLocation() {
+      try {
+        // Call your local MongoDB backend API
+        const res = await fetch("http://192.168.1.11:4000/api/gps/latest_location/VV-11");
+        const data = await res.json();
+
+        if (data && data.lat && data.lon) {
+          const pos = [Number(data.lat), Number(data.lon)];
+          isLive = true;
+
+          // Update marker
+          marker.setLatLng(pos);
+          map.setView(pos, 13);
+
+          // Format timestamp
+          const timestamp = data.timestamp 
+            ? new Date(data.timestamp).toLocaleString()
+            : new Date().toLocaleString();
+
+          // Update info box
+          document.getElementById("info").innerHTML = `
+            <div style="margin-bottom: 8px;">
+              <span style="color: #10B981; font-weight: bold;">● LIVE</span> VV-11 Bus
+            </div>
+            <div style="font-size: 12px; opacity: 0.9;">
+              Stop: ${data.stopName || "N/A"}<br>
+              Lat: ${pos[0].toFixed(5)}<br>
+              Lng: ${pos[1].toFixed(5)}<br>
+              Time: ${timestamp}
+            </div>
+          `;
+        } else {
+          isLive = false;
+          document.getElementById("info").innerHTML = `
+            <div style="margin-bottom: 8px;">
+              <span style="color: #EF4444; font-weight: bold;">● OFFLINE</span> VV-11 Bus
+            </div>
+            <div style="font-size: 12px; opacity: 0.9;">
+              No live location available
+            </div>
+          `;
+        }
+      } catch (e) {
+        console.error("Live location error", e);
+        isLive = false;
+        document.getElementById("info").innerHTML = `
+          <div style="margin-bottom: 8px;">
+            <span style="color: #EF4444; font-weight: bold;">● ERROR</span> VV-11 Bus
+          </div>
+          <div style="font-size: 12px; opacity: 0.9;">
+            Error fetching location!
+          </div>
+        `;
+      }
+    }
+
+    // Initialize map when page loads
+    window.onload = initMap;
+  </script>
+</body>
+</html>
+
+

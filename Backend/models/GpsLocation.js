@@ -1,0 +1,11 @@
+const mongoose = require("mongoose");
+
+const gpsSchema = new mongoose.Schema({
+    route: { type: String, required: true },
+    lat: { type: Number, required: true },
+    lon: { type: Number, required: true },
+    stopName: { type: String }, // optional if only tracking
+    timestamp: { type: Date, default: Date.now }
+});
+
+module.exports = mongoose.model("GpsLocation", gpsSchema);

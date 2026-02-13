@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>VV-12 Live Bus Tracking</title>
+  <style>
+    html, body, #map {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+    #info {
+      position: absolute;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.8);
+      color: #fff;
+      padding: 15px 20px;
+      border-radius: 10px;
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+      text-align: center;
+      z-index: 1000;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="info">Fetching live location...</div>
+
+  <script>
+    let map, marker;
+    let isLive = false;
+
+    function initMap() {
+      // Initialize map centered at Vijayawada using Google Maps
+      map = new google.maps.Map(document.getElementById("map"), {
+        zoom: 13,
+        center: { lat: 16.5282, lng: 80.6292 },
+        mapTypeId: google.maps.MapTypeId.ROADMAP
+      });
+
+      // Add route stops
+      const stops = [
+        { name: "Kankipadu", lat: 16.512112, lng: 80.517588 },
+        { name: "Gosala", lat: 16.515983, lng: 80.671151 },
+        { name: "Edupugallu", lat: 16.5282, lng: 80.6292 },
+        { name: "Penumaluru", lat: 16.5120, lng: 80.6204 },
+        { name: "Poranki", lat: 16.5032, lng: 80.6310 }
+      ];
+
+      // Add stop markers
+      stops.forEach(stop => {
+        new google.maps.Marker({
+          map,
+          position: { lat: stop.lat, lng: stop.lng },
+          title: stop.name,
+          icon: {
+            url: 'http://maps.google.com/mapfiles/ms/icons/red-dot.png',
+            scaledSize: new google.maps.Size(20, 20)
+          }
+        });
+      });
+
+      // Draw route line
+      const routePath = new google.maps.Polyline({
+        path: stops.map(stop => ({ lat: stop.lat, lng: stop.lng })),
+        geodesic: true,
+        strokeColor: '#3B82F6',
+        strokeOpacity: 0.7,
+        strokeWeight: 4
+      });
+      routePath.setMap(map);
+
+      // Create bus marker
+      marker = new google.maps.Marker({
+        map,
+        icon: "http://maps.google.com/mapfiles/ms/icons/bus.png",
+        title: "Live VV-12 Bus"
+      });
+
+      updateLocation();
+      setInterval(updateLocation, 5000); // refresh every 5s
+    }
+
+    async function updateLocation() {
+      try {
+        // Call your local MongoDB backend API
+        const res = await fetch("http://192.168.1.11:4000/api/gps/latest_location/VV-12");
+        const data = await res.json();
+
+        if (data && data.lat && data.lon) {
+          const pos = { lat: Number(data.lat), lng: Number(data.lon) };
+          isLive = true;
+
+          // Update marker
+          marker.setPosition(pos);
+          map.setCenter(pos);
+
+          // Format timestamp
+          const timestamp = data.timestamp 
+            ? new Date(data.timestamp).toLocaleString()
+            : new Date().toLocaleString();
+
+          // Update info box
+          document.getElementById("info").innerHTML = `
+            <div style="margin-bottom: 8px;">
+              <span style="color: #10B981; font-weight: bold;">● LIVE</span> VV-12 Bus
+            </div>
+            <div style="font-size: 12px; opacity: 0.9;">
+              Stop: ${data.stopName || "N/A"}<br>
+              Lat: ${pos.lat.toFixed(5)}<br>
+              Lng: ${pos.lng.toFixed(5)}<br>
+              Time: ${timestamp}
+            </div>
+          `;
+        } else {
+          isLive = false;
+          document.getElementById("info").innerHTML = `
+            <div style="margin-bottom: 8px;">
+              <span style="color: #EF4444; font-weight: bold;">● OFFLINE</span> VV-12 Bus
+            </div>
+            <div style="font-size: 12px; opacity: 0.9;">
+              No live location available
+            </div>
+          `;
+        }
+      } catch (e) {
+        console.error("Live location error", e);
+        isLive = false;
+        document.getElementById("info").innerHTML = `
+          <div style="margin-bottom: 8px;">
+            <span style="color: #EF4444; font-weight: bold;">● ERROR</span> VV-12 Bus
+          </div>
+          <div style="font-size: 12px; opacity: 0.9;">
+            Error fetching location!
+          </div>
+        `;
+      }
+    }
+
+  </script>
+  <!-- Google Maps API -->
+  <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB48fIbQ7fTdXAp-pPf_mjXXAf2BEQMDI0&callback=initMap"></script>
+</body>
+</html>

@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>VV-11 Live Bus Tracking</title>
+  <style>
+    html, body, #map {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    
+    #map {
+      position: relative;
+    }
+    
+    #info {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(255, 255, 255, 0.95);
+      color: #333;
+      padding: 20px;
+      border-radius: 12px;
+      font-size: 14px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.2);
+      min-width: 280px;
+      z-index: 1000;
+    }
+    
+    #controls {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 15px;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.2);
+      z-index: 1000;
+    }
+    
+    .control-btn {
+      background: #4285f4;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin: 5px;
+      font-size: 12px;
+      transition: all 0.3s ease;
+    }
+    
+    .control-btn:hover {
+      background: #3367d6;
+      transform: translateY(-2px);
+    }
+    
+    .control-btn:active {
+      transform: translateY(0);
+    }
+    
+    .status-indicator {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 8px;
+      animation: pulse 2s infinite;
+    }
+    
+    .status-live {
+      background: #4CAF50;
+    }
+    
+    .status-offline {
+      background: #f44336;
+    }
+    
+    @keyframes pulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.5; }
+      100% { opacity: 1; }
+    }
+    
+    .bus-info {
+      margin: 10px 0;
+      padding: 10px;
+      background: rgba(66, 133, 244, 0.1);
+      border-radius: 8px;
+      border-left: 4px solid #4285f4;
+    }
+    
+    .speed-indicator {
+      display: inline-block;
+      padding: 4px 8px;
+      background: #ff9800;
+      color: white;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: bold;
+    }
+    
+    .route-badge {
+      background: #673ab7;
+      color: white;
+      padding: 4px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: bold;
+      display: inline-block;
+      margin-bottom: 10px;
+    }
+    
+    .loading {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #4285f4;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    #notification {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #4CAF50;
+      color: white;
+      padding: 15px 25px;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+      z-index: 2000;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    
+    .notification-show {
+      opacity: 1 !important;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  
+  <div id="info">
+    <div class="route-badge">🚌 VV-11 Route</div>
+    <div>
+      <span class="status-indicator status-live"></span>
+      <strong>Live Tracking</strong>
+    </div>
+    <div class="bus-info">
+      <div><strong>Current Location:</strong></div>
+      <div id="coordinates">Fetching...</div>
+      <div><strong>Stop:</strong> <span id="stopName">Loading...</span></div>
+      <div><strong>Speed:</strong> <span class="speed-indicator" id="speed">-- km/h</span></div>
+    </div>
+    <div><strong>Last Updated:</strong> <span id="lastUpdate">--</span></div>
+    <div><strong>Next Update:</strong> <span id="nextUpdate">--</span></div>
+  </div>
+  
+  <div id="controls">
+    <div style="margin-bottom: 10px;"><strong>Controls</strong></div>
+    <button class="control-btn" onclick="centerOnBus()">📍 Center Bus</button>
+    <button class="control-btn" onclick="toggleAutoCenter()">🔄 Auto Center</button>
+    <button class="control-btn" onclick="toggleTraffic()">🚦 Traffic</button>
+    <button class="control-btn" onclick="showRouteInfo()">ℹ️ Route Info</button>
+    <div style="margin-top: 10px;">
+      <label>Update Interval:</label><br>
+      <select id="updateInterval" onchange="changeUpdateInterval()">
+        <option value="3000">3 seconds</option>
+        <option value="5000" selected>5 seconds</option>
+        <option value="10000">10 seconds</option>
+        <option value="30000">30 seconds</option>
+      </select>
+    </div>
+  </div>
+  
+  <div id="notification"></div>
+
+  <script>
+    let map, marker, infoWindow;
+    let autoCenter = false;
+    let updateInterval = 5000;
+    let updateTimer;
+    let lastPosition = null;
+    let isOnline = true;
+
+    // Custom 3D Bus Icon
+    const busIcon = {
+      url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
+        <svg width="50" height="50" viewBox="0 0 50 50" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="busGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#4285f4;stop-opacity:1" />
+              <stop offset="100%" style="stop-color:#3367d6;stop-opacity:1" />
+            </linearGradient>
+            <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+              <feDropShadow dx="3" dy="3" stdDeviation="4" flood-color="#000" flood-opacity="0.5"/>
+            </filter>
+            <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+              <feMerge> 
+                <feMergeNode in="coloredBlur"/>
+                <feMergeNode in="SourceGraphic"/>
+              </feMerge>
+            </filter>
+          </defs>
+          <!-- Bus Shadow -->
+          <ellipse cx="25" cy="45" rx="15" ry="3" fill="#000" opacity="0.3"/>
+          <!-- Bus Body with 3D effect -->
+          <rect x="8" y="15" width="34" height="25" rx="4" fill="url(#busGradient)" filter="url(#shadow)"/>
+          <!-- Bus Top -->
+          <rect x="10" y="12" width="30" height="8" rx="3" fill="url(#busGradient)" filter="url(#shadow)"/>
+          <!-- Bus Windows with 3D effect -->
+          <rect x="12" y="18" width="8" height="5" rx="1" fill="#87CEEB" opacity="0.9"/>
+          <rect x="22" y="18" width="8" height="5" rx="1" fill="#87CEEB" opacity="0.9"/>
+          <rect x="32" y="18" width="8" height="5" rx="1" fill="#87CEEB" opacity="0.9"/>
+          <!-- Window frames -->
+          <rect x="12" y="18" width="8" height="5" rx="1" fill="none" stroke="#333" stroke-width="0.5"/>
+          <rect x="22" y="18" width="8" height="5" rx="1" fill="none" stroke="#333" stroke-width="0.5"/>
+          <rect x="32" y="18" width="8" height="5" rx="1" fill="none" stroke="#333" stroke-width="0.5"/>
+          <!-- Bus Door with 3D effect -->
+          <rect x="18" y="25" width="14" height="12" rx="2" fill="#FFD700"/>
+          <rect x="18" y="25" width="14" height="12" rx="2" fill="none" stroke="#333" stroke-width="1"/>
+          <line x1="25" y1="25" x2="25" y2="37" stroke="#333" stroke-width="1.5"/>
+          <!-- Door handle -->
+          <circle cx="23" cy="31" r="1" fill="#333"/>
+          <!-- Bus Wheels with 3D effect -->
+          <circle cx="15" cy="38" r="4" fill="#333"/>
+          <circle cx="35" cy="38" r="4" fill="#333"/>
+          <circle cx="15" cy="38" r="2" fill="#666"/>
+          <circle cx="35" cy="38" r="2" fill="#666"/>
+          <!-- Bus Lights with glow effect -->
+          <circle cx="12" cy="17" r="1.5" fill="#FFD700" filter="url(#glow)"/>
+          <circle cx="38" cy="17" r="1.5" fill="#FFD700" filter="url(#glow)"/>
+          <!-- Route Number with 3D effect -->
+          <rect x="20" y="28" width="10" height="6" rx="1" fill="#673ab7"/>
+          <text x="25" y="32" text-anchor="middle" fill="white" font-size="6" font-weight="bold" font-family="Arial">VV-11</text>
+          <!-- Bus antenna -->
+          <line x1="25" y1="12" x2="25" y2="8" stroke="#333" stroke-width="1"/>
+          <circle cx="25" cy="8" r="1" fill="#333"/>
+        </svg>
+      `),
+      scaledSize: new google.maps.Size(50, 50),
+      anchor: new google.maps.Point(25, 25)
+    };
+
+    function initMap() {
+      // Initialize map centered at Vijayawada
+      map = new google.maps.Map(document.getElementById("map"), {
+        zoom: 15,
+        center: { lat: 16.5282, lng: 80.6292 },
+        mapTypeId: google.maps.MapTypeId.ROADMAP,
+        styles: [
+          {
+            featureType: "poi",
+            elementType: "labels",
+            stylers: [{ visibility: "off" }]
+          }
+        ]
+      });
+
+      // Live bus marker with custom 3D icon and fallback
+      marker = new google.maps.Marker({
+        map,
+        icon: busIcon,
+        title: "VV-11 Live Bus Location",
+        animation: google.maps.Animation.DROP,
+        zIndex: 1000 // Ensure it's on top
+      });
+
+      // Fallback to default bus icon if custom icon fails
+      marker.addListener('error', () => {
+        console.log('Custom icon failed, using default bus icon');
+        marker.setIcon("http://maps.google.com/mapfiles/ms/icons/bus.png");
+      });
+
+      // Info window for bus details
+      infoWindow = new google.maps.InfoWindow({
+        content: '<div style="padding: 10px;"><strong>VV-11 Bus</strong><br>Loading location...</div>'
+      });
+
+      // Add click listener to marker
+      marker.addListener('click', () => {
+        infoWindow.open(map, marker);
+      });
+
+      // Add map click listener to close info window
+      map.addListener('click', () => {
+        infoWindow.close();
+      });
+
+      // Initialize time display
+      const initialTime = new Date();
+      const initialTimeString = initialTime.toLocaleTimeString('en-US', {
+        hour12: true,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+      const initialDateString = initialTime.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      });
+      document.getElementById('lastUpdate').textContent = `${initialDateString} ${initialTimeString}`;
+      
+      updateLocation();
+      startUpdateTimer();
+    }
+
+    async function updateLocation() {
+      try {
+        showNotification('🔄 Updating location...', 'info');
+        
+        const res = await fetch("https://git-backend-1-production.up.railway.app/api/gps/latest_location/VV-11");
+        const data = await res.json();
+
+        if (data && data.lat && data.lon) {
+          const pos = { lat: Number(data.lat), lng: Number(data.lon) };
+          
+          // Calculate speed if we have previous position
+          let speed = '--';
+          if (lastPosition) {
+            const distance = google.maps.geometry.spherical.computeDistanceBetween(
+              new google.maps.LatLng(lastPosition.lat, lastPosition.lng),
+              new google.maps.LatLng(pos.lat, pos.lng)
+            );
+            const timeDiff = (Date.now() - lastPosition.timestamp) / 1000; // seconds
+            if (timeDiff > 0) {
+              speed = Math.round((distance / 1000) / (timeDiff / 3600)) + ' km/h';
+            }
+          }
+
+          // Update marker with smooth animation
+          marker.setPosition(pos);
+          
+          // Add bounce animation for new updates
+          marker.setAnimation(google.maps.Animation.BOUNCE);
+          setTimeout(() => marker.setAnimation(null), 1500);
+
+          // Auto center if enabled
+          if (autoCenter) {
+            map.setCenter(pos);
+          }
+
+          // Update info window
+          const infoCurrentTime = new Date();
+          const infoTimeString = infoCurrentTime.toLocaleTimeString('en-US', {
+            hour12: true,
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+          });
+          const infoDateString = infoCurrentTime.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric'
+          });
+          
+          const infoContent = `
+            <div style="padding: 15px; min-width: 200px;">
+              <h3 style="margin: 0 0 10px 0; color: #4285f4;">🚌 VV-11 Bus</h3>
+              <p><strong>Current Stop:</strong> ${data.stopName || 'In Transit'}</p>
+              <p><strong>Speed:</strong> ${speed}</p>
+              <p><strong>Coordinates:</strong><br>
+                Lat: ${pos.lat.toFixed(6)}<br>
+                Lng: ${pos.lng.toFixed(6)}</p>
+              <p><strong>Last Updated:</strong><br>${infoDateString} ${infoTimeString}</p>
+            </div>
+          `;
+          infoWindow.setContent(infoContent);
+
+          // Update UI
+          document.getElementById('coordinates').innerHTML = 
+            `Lat: ${pos.lat.toFixed(6)}<br>Lng: ${pos.lng.toFixed(6)}`;
+          document.getElementById('stopName').textContent = data.stopName || 'In Transit';
+          document.getElementById('speed').textContent = speed;
+          
+          // Format current time properly
+          const currentTime = new Date();
+          const timeString = currentTime.toLocaleTimeString('en-US', {
+            hour12: true,
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+          });
+          const dateString = currentTime.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric'
+          });
+          document.getElementById('lastUpdate').textContent = `${dateString} ${timeString}`;
+          
+          // Update next update time
+          const nextUpdateTime = new Date(Date.now() + updateInterval);
+          const nextTimeString = nextUpdateTime.toLocaleTimeString('en-US', {
+            hour12: true,
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+          });
+          document.getElementById('nextUpdate').textContent = nextTimeString;
+
+          // Update status
+          updateStatus(true);
+          
+          // Store last position for speed calculation
+          lastPosition = { lat: pos.lat, lng: pos.lng, timestamp: Date.now() };
+
+          showNotification('✅ Location updated successfully!', 'success');
+        } else {
+          updateStatus(false);
+          document.getElementById('coordinates').textContent = 'No location data available';
+          document.getElementById('stopName').textContent = 'Unknown';
+          document.getElementById('speed').textContent = '-- km/h';
+          showNotification('⚠️ No location data available', 'warning');
+        }
+      } catch (e) {
+        console.error("Live location error", e);
+        updateStatus(false);
+        document.getElementById('coordinates').textContent = 'Error fetching location';
+        document.getElementById('stopName').textContent = 'Error';
+        document.getElementById('speed').textContent = '-- km/h';
+        showNotification('❌ Error fetching location!', 'error');
+      }
+    }
+
+    function updateStatus(online) {
+      isOnline = online;
+      const indicator = document.querySelector('.status-indicator');
+      if (online) {
+        indicator.className = 'status-indicator status-live';
+        indicator.style.animation = 'pulse 2s infinite';
+      } else {
+        indicator.className = 'status-indicator status-offline';
+        indicator.style.animation = 'none';
+      }
+    }
+
+    function startUpdateTimer() {
+      if (updateTimer) clearInterval(updateTimer);
+      updateTimer = setInterval(updateLocation, updateInterval);
+    }
+
+    function centerOnBus() {
+      if (lastPosition) {
+        map.setCenter({ lat: lastPosition.lat, lng: lastPosition.lng });
+        map.setZoom(16);
+        showNotification('📍 Centered on bus location', 'info');
+      } else {
+        showNotification('⚠️ No bus location available', 'warning');
+      }
+    }
+
+    function toggleAutoCenter() {
+      autoCenter = !autoCenter;
+      const btn = event.target;
+      if (autoCenter) {
+        btn.textContent = '🔄 Auto Center ON';
+        btn.style.background = '#4CAF50';
+        showNotification('🔄 Auto center enabled', 'success');
+      } else {
+        btn.textContent = '🔄 Auto Center OFF';
+        btn.style.background = '#4285f4';
+        showNotification('🔄 Auto center disabled', 'info');
+      }
+    }
+
+    function toggleTraffic() {
+      const btn = event.target;
+      if (map.getMapTypeId() === google.maps.MapTypeId.ROADMAP) {
+        map.setMapTypeId(google.maps.MapTypeId.HYBRID);
+        btn.textContent = '🗺️ Satellite';
+        showNotification('🗺️ Switched to satellite view', 'info');
+      } else {
+        map.setMapTypeId(google.maps.MapTypeId.ROADMAP);
+        btn.textContent = '🚦 Traffic';
+        showNotification('🚦 Switched to road view', 'info');
+      }
+    }
+
+    function showRouteInfo() {
+      const routeInfo = `
+        <div style="padding: 20px; max-width: 400px;">
+          <h2 style="color: #4285f4; margin-top: 0;">🚌 VV-11 Route Information</h2>
+          <p><strong>Route:</strong> VV-11</p>
+          <p><strong>Type:</strong> VIT Bus Service</p>
+          <p><strong>Frequency:</strong> Every 15-20 minutes</p>
+          <p><strong>Operating Hours:</strong> 6:00 AM - 10:00 PM</p>
+          <p><strong>Capacity:</strong> 50 passengers</p>
+          <p><strong>Features:</strong> GPS Tracking, Real-time Updates</p>
+          <hr>
+          <p><em>This bus provides transportation services for VIT students and staff.</em></p>
+        </div>
+      `;
+      
+      const infoWindow = new google.maps.InfoWindow({
+        content: routeInfo
+      });
+      
+      infoWindow.setPosition(map.getCenter());
+      infoWindow.open(map);
+      showNotification('ℹ️ Route information displayed', 'info');
+    }
+
+    function changeUpdateInterval() {
+      updateInterval = parseInt(document.getElementById('updateInterval').value);
+      startUpdateTimer();
+      showNotification(`⏱️ Update interval changed to ${updateInterval/1000} seconds`, 'info');
+    }
+
+    function showNotification(message, type = 'info') {
+      const notification = document.getElementById('notification');
+      notification.textContent = message;
+      notification.className = `notification-show`;
+      
+      // Set color based on type
+      switch(type) {
+        case 'success':
+          notification.style.background = '#4CAF50';
+          break;
+        case 'error':
+          notification.style.background = '#f44336';
+          break;
+        case 'warning':
+          notification.style.background = '#ff9800';
+          break;
+        default:
+          notification.style.background = '#4285f4';
+      }
+      
+      setTimeout(() => {
+        notification.className = '';
+      }, 3000);
+    }
+
+    // Add keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      switch(e.key) {
+        case 'c':
+        case 'C':
+          centerOnBus();
+          break;
+        case 'a':
+        case 'A':
+          toggleAutoCenter();
+          break;
+        case 't':
+        case 'T':
+          toggleTraffic();
+          break;
+        case 'r':
+        case 'R':
+          showRouteInfo();
+          break;
+        case ' ':
+          e.preventDefault();
+          updateLocation();
+          break;
+      }
+    });
+
+    // Add touch gestures for mobile
+    let touchStartY = 0;
+    document.addEventListener('touchstart', (e) => {
+      touchStartY = e.touches[0].clientY;
+    });
+
+    document.addEventListener('touchend', (e) => {
+      const touchEndY = e.changedTouches[0].clientY;
+      const diff = touchStartY - touchEndY;
+      
+      if (Math.abs(diff) > 50) { // Swipe threshold
+        if (diff > 0) {
+          // Swipe up - center on bus
+          centerOnBus();
+        } else {
+          // Swipe down - toggle auto center
+          toggleAutoCenter();
+        }
+      }
+    });
+  </script>
+
+  <!-- Google Maps API with additional libraries -->
+  <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB48fIbQ7fTdXAp-pPf_mjXXAf2BEQMDI0&libraries=geometry&callback=initMap"></script>
+</body>
+</html>
