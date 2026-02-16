@@ -6,8 +6,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import arrivalService from '../../src/services/arrivalService';
 import { API_CONFIG } from '../config/api';
+import { useTheme } from '../(auth)/context/ThemeContext';
+import { colors } from '../constants/colors';
 
 const { width, height } = Dimensions.get('window');
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // VV1-specific data
 const routeData = {
@@ -174,6 +177,8 @@ const sendArrivalData = async (
 
 export default function VV1Route() {
   const router = useRouter();
+  const { isDark } = useTheme();
+  const theme = colors[isDark ? 'dark' : 'light'];
   const webViewRef = useRef<WebView>(null);
   const [mapExpanded, setMapExpanded] = useState(false);
   const [currentStop, setCurrentStop] = useState<string | null>(null);
@@ -670,111 +675,17 @@ export default function VV1Route() {
   const progressPercentage = (completedStops / totalStops) * 100;
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#1E293B" />
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
       
-      {/* Modern Header */}
-      <Animated.View style={[styles.header, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-        <LinearGradient
-          colors={['#1E293B', '#334155', '#475569']}
-          style={styles.headerGradient}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-        >
-          <View style={styles.headerTop}>
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-              <ArrowLeft size={24} color="#FFFFFF" />
-            </TouchableOpacity>
-            <View style={styles.headerCenter}>
-              <Text style={styles.routeTitle}>{routeData.title}</Text>
-              <Text style={styles.routeSubtitle}>{routeData.description}</Text>
-            </View>
-            <View style={styles.headerRight}>
-              <Animated.View style={[styles.liveIndicator, { transform: [{ scale: pulseAnim }] }]}>
-                <View style={[styles.liveDot, { backgroundColor: isLive ? '#10B981' : '#EF4444' }]} />
-                <Text style={styles.liveText}>{isLive ? 'LIVE' : 'OFFLINE'}</Text>
-              </Animated.View>
-              <TouchableOpacity 
-                style={styles.testButton} 
-                onPress={() => {
-                  // Always use current time for manual test
-                  const now = new Date();
-                  const hr = now.getHours();
-                  const min = now.getMinutes().toString().padStart(2, '0');
-                  const ampm = hr >= 12 ? "PM" : "AM";
-                  const hr12 = hr % 12 || 12;
-                  const time = `${hr12}:${min} ${ampm}`;
-                  const timestamp = now.toISOString();
-                  console.log('🧪 Manual test: Recording VIT-AP arrival at', timestamp);
-                  sendArrivalData('vv1', 'VIT-AP', time, 16.497358, 80.49956783, timestamp);
-                }}
-              >
-                <Text style={styles.testButtonText}>Test Save</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-          
-          {/* Progress Bar */}
-          <View style={styles.progressBarContainer}>
-            <View style={styles.progressBar}>
-              <Animated.View 
-                style={[
-                  styles.progressFill, 
-                  {
-                    width: `${progressPercentage}%`,
-                    opacity: fadeAnim
-                  }
-                ]} 
-              />
-            </View>
-            <Text style={styles.progressText}>{completedStops}/{totalStops} stops completed</Text>
-          </View>
-        </LinearGradient>
-      </Animated.View>
-
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Quick Stats */}
-        <Animated.View style={[styles.statsContainer, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-          <View style={styles.statCard}>
-            <View style={styles.statIcon}>
-              <Bus size={20} color="#3B82F6" />
-            </View>
-            <Text style={styles.statNumber}>{routeData.busNumber}</Text>
-            <Text style={styles.statLabel}>Bus Number</Text>
-          </View>
-          
-          <View style={styles.statCard}>
-            <View style={styles.statIcon}>
-              <Navigation size={20} color="#10B981" />
-            </View>
-            <Text style={styles.statNumber}>{totalStops}</Text>
-            <Text style={styles.statLabel}>Total Stops</Text>
-          </View>
-          
-          <View style={styles.statCard}>
-            <View style={styles.statIcon}>
-              <Users size={20} color={getOccupancyColor(routeData.occupancy)} />
-            </View>
-            <Text style={[styles.statNumber, { color: getOccupancyColor(routeData.occupancy) }]}>
-              {routeData.occupancy}
-            </Text>
-            <Text style={styles.statLabel}>Occupancy</Text>
-          </View>
-        </Animated.View>
-
-        {/* Live Map */}
-        <Animated.View style={[styles.mapSection, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionTitleContainer}>
-              <MapPin size={20} color="#3B82F6" />
-              <Text style={styles.sectionTitle}>Live Tracking</Text>
-            </View>
-            <TouchableOpacity style={styles.expandButton} onPress={toggleMapExpansion}>
-              <Text style={styles.expandButtonText}>Full Screen</Text>
-            </TouchableOpacity>
-          </View>
-          
-          <TouchableOpacity style={styles.mapContainer} activeOpacity={0.9} onPress={toggleMapExpansion}>
+      <ScrollView 
+        style={styles.scrollView} 
+        contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Full Screen Map at Top */}
+        <View style={styles.mapWrapper}>
+          <View style={styles.mapContainer}>
             <WebView
               ref={webViewRef}
               source={{ html: mapHtml }}
@@ -783,21 +694,98 @@ export default function VV1Route() {
               javaScriptEnabled
               domStorageEnabled
             />
+            
+            {/* Header Overlay */}
             <LinearGradient
-              colors={['transparent', 'rgba(0,0,0,0.1)']}
-              style={styles.mapGradientOverlay}
-            />
-          </TouchableOpacity>
+              colors={['rgba(58, 12, 163, 0.9)', 'rgba(58, 12, 163, 0.7)', 'transparent']}
+              style={styles.mapHeaderOverlay}
+            >
+              <View style={styles.headerTop}>
+                <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                  <ArrowLeft size={24} color="#FFFFFF" />
+                </TouchableOpacity>
+                <View style={styles.headerCenter}>
+                  <Text style={styles.routeTitle}>{routeData.title}</Text>
+                  <Text style={styles.routeSubtitle}>{routeData.description}</Text>
+                </View>
+                <View style={styles.headerRight}>
+                  <Animated.View style={[styles.liveIndicator, { transform: [{ scale: pulseAnim }] }]}>
+                    <View style={[styles.liveDot, { backgroundColor: isLive ? '#10B981' : '#EF4444' }]} />
+                    <Text style={styles.liveText}>{isLive ? 'LIVE' : 'OFFLINE'}</Text>
+                  </Animated.View>
+                </View>
+              </View>
+              
+              {/* Progress Bar */}
+              <View style={styles.progressBarContainer}>
+                <View style={styles.progressBar}>
+                  <Animated.View 
+                    style={[
+                      styles.progressFill, 
+                      {
+                        width: `${progressPercentage}%`,
+                        opacity: fadeAnim
+                      }
+                    ]} 
+                  />
+                </View>
+                <Text style={styles.progressText}>{completedStops}/{totalStops} stops completed</Text>
+              </View>
+            </LinearGradient>
+            
+            {/* Bottom Gradient Overlay */}
+            <LinearGradient
+              colors={['transparent', 'rgba(0,0,0,0.4)']}
+              style={styles.mapBottomOverlay}
+            >
+              <TouchableOpacity 
+                style={styles.expandButtonOverlay}
+                onPress={toggleMapExpansion}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.expandButtonText}>Tap to expand map</Text>
+              </TouchableOpacity>
+            </LinearGradient>
+          </View>
+        </View>
+
+        {/* Quick Stats */}
+        <Animated.View style={[styles.statsContainer, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+          <View style={[styles.statCard, { backgroundColor: theme.surface }]}>
+            <View style={[styles.statIcon, { backgroundColor: theme.primary + '15' }]}>
+              <Bus size={20} color={theme.primary} />
+            </View>
+            <Text style={[styles.statNumber, { color: theme.text }]}>{routeData.busNumber}</Text>
+            <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Bus Number</Text>
+          </View>
+          
+          <View style={[styles.statCard, { backgroundColor: theme.surface }]}>
+            <View style={[styles.statIcon, { backgroundColor: theme.success + '15' }]}>
+              <Navigation size={20} color={theme.success} />
+            </View>
+            <Text style={[styles.statNumber, { color: theme.text }]}>{totalStops}</Text>
+            <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Total Stops</Text>
+          </View>
+          
+          <View style={[styles.statCard, { backgroundColor: theme.surface }]}>
+            <View style={[styles.statIcon, { backgroundColor: getOccupancyColor(routeData.occupancy) + '15' }]}>
+              <Users size={20} color={getOccupancyColor(routeData.occupancy)} />
+            </View>
+            <Text style={[styles.statNumber, { color: getOccupancyColor(routeData.occupancy) }]}>
+              {routeData.occupancy}
+            </Text>
+            <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Occupancy</Text>
+          </View>
         </Animated.View>
 
         {/* Route Timeline */}
         <Animated.View style={[styles.timelineSection, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
           <View style={styles.sectionHeader}>
-            <Activity size={20} color="#8B5CF6" />
-            <Text style={styles.sectionTitle}>Route Timeline</Text>
+            <Activity size={20} color={theme.primary} />
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Route Timeline</Text>
           </View>
           
-          <View style={styles.timelineContainer}>
+          <View style={[styles.timelineContainer, { backgroundColor: theme.surface }]}>
             {routeData.stops.map((stop, index) => {
               const status = getStopStatus(stop);
               const isLast = index === routeData.stops.length - 1;
@@ -826,23 +814,24 @@ export default function VV1Route() {
                     <View style={styles.timelineHeader}>
                       <Text style={[
                         styles.stopName,
-                        status?.status === 'current' && styles.currentStopName
+                        { color: theme.text },
+                        status?.status === 'current' && { color: theme.primary }
                       ]}>
                         {stop}
                       </Text>
                       {status?.status === 'current' && (
-                        <View style={styles.currentBadge}>
-                          <Text style={styles.currentBadgeText}>Approaching</Text>
+                        <View style={[styles.currentBadge, { backgroundColor: theme.primary + '20' }]}>
+                          <Text style={[styles.currentBadgeText, { color: theme.primary }]}>Approaching</Text>
                         </View>
                       )}
                     </View>
                     
                     <View style={styles.timelineDetails}>
-                      <Text style={styles.scheduledTime}>
+                      <Text style={[styles.scheduledTime, { color: theme.textSecondary }]}>
                         Scheduled: {scheduleItem?.time}
                       </Text>
                       {isLive && status?.actualTime && (
-                        <Text style={styles.actualTime}>
+                        <Text style={[styles.actualTime, { color: theme.success }]}>
                           Arrived: {status.actualTime}
                         </Text>
                       )}
@@ -857,29 +846,29 @@ export default function VV1Route() {
         {/* Performance Metrics */}
         <Animated.View style={[styles.metricsSection, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
           <View style={styles.sectionHeader}>
-            <TrendingUp size={20} color="#F59E0B" />
-            <Text style={styles.sectionTitle}>Performance Metrics</Text>
+            <TrendingUp size={20} color={theme.primary} />
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Performance Metrics</Text>
           </View>
           
           <View style={styles.metricsGrid}>
-            <View style={styles.metricCard}>
-              <Text style={styles.metricValue}>{progressPercentage.toFixed(0)}%</Text>
-              <Text style={styles.metricLabel}>Route Completion</Text>
+            <View style={[styles.metricCard, { backgroundColor: theme.surface }]}>
+              <Text style={[styles.metricValue, { color: theme.text }]}>{progressPercentage.toFixed(0)}%</Text>
+              <Text style={[styles.metricLabel, { color: theme.textSecondary }]}>Route Completion</Text>
             </View>
             
-            <View style={styles.metricCard}>
-              <Text style={styles.metricValue}>{completedStops}</Text>
-              <Text style={styles.metricLabel}>Stops Completed</Text>
+            <View style={[styles.metricCard, { backgroundColor: theme.surface }]}>
+              <Text style={[styles.metricValue, { color: theme.text }]}>{completedStops}</Text>
+              <Text style={[styles.metricLabel, { color: theme.textSecondary }]}>Stops Completed</Text>
             </View>
             
-            <View style={styles.metricCard}>
-              <Text style={styles.metricValue}>{totalStops - completedStops}</Text>
-              <Text style={styles.metricLabel}>Remaining Stops</Text>
+            <View style={[styles.metricCard, { backgroundColor: theme.surface }]}>
+              <Text style={[styles.metricValue, { color: theme.text }]}>{totalStops - completedStops}</Text>
+              <Text style={[styles.metricLabel, { color: theme.textSecondary }]}>Remaining Stops</Text>
             </View>
             
-            <View style={styles.metricCard}>
-              <Text style={styles.metricValue}>{isLive ? 'Active' : 'Inactive'}</Text>
-              <Text style={styles.metricLabel}>Tracking Status</Text>
+            <View style={[styles.metricCard, { backgroundColor: theme.surface }]}>
+              <Text style={[styles.metricValue, { color: isLive ? theme.success : theme.error }]}>{isLive ? 'Active' : 'Inactive'}</Text>
+              <Text style={[styles.metricLabel, { color: theme.textSecondary }]}>Tracking Status</Text>
             </View>
           </View>
         </Animated.View>
@@ -887,9 +876,9 @@ export default function VV1Route() {
 
       {/* Expanded Map Modal */}
       <Modal visible={mapExpanded} transparent={false} animationType="slide">
-        <View style={styles.expandedMapContainer}>
+        <View style={[styles.expandedMapContainer, { backgroundColor: theme.background }]}>
           <LinearGradient
-            colors={['#1E293B', '#334155']}
+            colors={theme.gradientOmbreHeader}
             style={styles.modalHeader}
           >
             <Text style={styles.modalTitle}>Live Bus Tracking</Text>
@@ -912,14 +901,32 @@ export default function VV1Route() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F8FAFC",
   },
-  header: {
+  scrollView: {
+    flex: 1,
+  },
+  contentContainer: {
+    paddingBottom: 40,
+  },
+  mapWrapper: {
+    height: SCREEN_HEIGHT,
+    width: '100%',
+  },
+  mapContainer: {
+    flex: 1,
+    position: 'relative',
+  },
+  map: {
+    flex: 1,
+  },
+  mapHeaderOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
     paddingTop: 60,
-  },
-  headerGradient: {
-    paddingHorizontal: 20,
     paddingBottom: 20,
+    paddingHorizontal: 20,
   },
   headerTop: {
     flexDirection: 'row',
@@ -947,10 +954,28 @@ const styles = StyleSheet.create({
   },
   routeSubtitle: {
     fontSize: 14,
-    color: '#CBD5E1',
+    color: '#FFFFFF',
+    opacity: 0.9,
   },
   headerRight: {
     alignItems: 'flex-end',
+  },
+  mapBottomOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingBottom: 40,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+  },
+  expandButtonOverlay: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
   },
   liveIndicator: {
     flexDirection: 'row',
@@ -1003,9 +1028,6 @@ const styles = StyleSheet.create({
     color: '#CBD5E1',
     textAlign: 'center',
   },
-  content: {
-    flex: 1,
-  },
   statsContainer: {
     flexDirection: 'row',
     paddingHorizontal: 20,
@@ -1014,7 +1036,6 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 16,
     marginHorizontal: 4,
@@ -1029,7 +1050,6 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
@@ -1037,64 +1057,16 @@ const styles = StyleSheet.create({
   statNumber: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#1E293B',
     marginBottom: 4,
   },
   statLabel: {
     fontSize: 12,
-    color: '#64748B',
     fontWeight: '500',
-  },
-  mapSection: {
-    marginHorizontal: 20,
-    marginBottom: 24,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  sectionTitleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1E293B',
-    marginLeft: 8,
-  },
-  expandButton: {
-    backgroundColor: '#3B82F6',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
   },
   expandButtonText: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '600',
-  },
-  mapContainer: {
-    height: 250,
-    borderRadius: 16,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 4,
-  },
-  map: {
-    flex: 1,
-  },
-  mapGradientOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 40,
   },
   expandedMapContainer: {
     flex: 1,
@@ -1126,7 +1098,6 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   timelineContainer: {
-    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 20,
     shadowColor: '#000',
@@ -1149,7 +1120,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#E5E7EB',
   },
   completedDot: {
     backgroundColor: '#10B981',
@@ -1187,20 +1157,17 @@ const styles = StyleSheet.create({
   stopName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1E293B',
   },
   currentStopName: {
     color: '#F59E0B',
   },
   currentBadge: {
-    backgroundColor: '#FEF3C7',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 12,
   },
   currentBadgeText: {
     fontSize: 12,
-    color: '#92400E',
     fontWeight: '600',
   },
   timelineDetails: {
@@ -1208,11 +1175,9 @@ const styles = StyleSheet.create({
   },
   scheduledTime: {
     fontSize: 14,
-    color: '#64748B',
   },
   actualTime: {
     fontSize: 14,
-    color: '#10B981',
     fontWeight: '600',
   },
   metricsSection: {
@@ -1226,7 +1191,6 @@ const styles = StyleSheet.create({
   },
   metricCard: {
     width: '48%',
-    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
@@ -1240,12 +1204,10 @@ const styles = StyleSheet.create({
   metricValue: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#1E293B',
     marginBottom: 4,
   },
   metricLabel: {
     fontSize: 12,
-    color: '#64748B',
     textAlign: 'center',
-  },
+  },
 });

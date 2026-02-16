@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Settings, Bell, LogOut, Camera, Globe, Edit, Phone, Mail, MapPin, User, Save, X, Moon, Sun } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../(auth)/context/AuthProvider';
 import { useTheme } from '../(auth)/context/ThemeContext';
 import { useRouter } from 'expo-router';
@@ -169,7 +170,12 @@ function ProfilePage() {
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { backgroundColor: colors.primary }]}>
+      <LinearGradient
+        colors={isDark ? colors.gradientOmbreHeader : ['#3A0CA3', '#2A0A7A', '#1A0A4A']}
+        style={styles.header}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      >
         <View style={styles.profileSection}>
           <View style={styles.profileImageContainer}>
             {uploadingImage ? (
@@ -191,7 +197,7 @@ function ProfilePage() {
             <Text style={styles.badge}>Faculty</Text>
           </View>
         </View>
-      </View>
+      </LinearGradient>
 
       <View style={styles.menuContainer}>
         {menuItems.map((item, index) => (

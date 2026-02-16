@@ -4,6 +4,7 @@ import { ArrowLeft, Calendar, Filter, Search, Plus, Edit, Trash2, Clock, MapPin,
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../(auth)/context/ThemeContext';
+import { colors } from '../constants/colors';
 import arrivalService from '../../src/services/arrivalService';
 import trackerService from '../../src/services/trackerService';
 import { API_CONFIG } from '../config/api';
@@ -1736,10 +1737,11 @@ export default function ArrivalsDashboard() {
   }, [availableRoutes]);
 
   const getStatusColor = (status: string) => {
+    const theme = colors[isDark ? 'dark' : 'light'];
     switch (status) {
       case 'on_time': return '#10B981';
       case 'delayed': return '#EF4444';
-      case 'early': return '#3B82F6';
+      case 'early': return theme.accent;
       default: return '#6B7280';
     }
   };
@@ -1755,21 +1757,27 @@ export default function ArrivalsDashboard() {
 
 
   const styles = getStyles(isDark);
+  const theme = colors[isDark ? 'dark' : 'light'];
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#3B82F6" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={theme.primary} />
 
-      {/* Header */}
-      <View style={styles.header}>
+      {/* Ombre Header */}
+      <LinearGradient
+        colors={theme.gradientOmbreHeader || theme.gradientOmbre}
+        style={styles.header}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      >
         <View style={styles.headerContent}>
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <ArrowLeft size={22} color="#FFFFFF" />
+            <ArrowLeft size={24} color="#FFFFFF" />
           </TouchableOpacity>
           <View style={styles.headerTitleContainer}>
             <Text style={styles.headerTitle}>Live Arrival Dashboard</Text>
             <Text style={styles.headerSubtitle}>Real-time bus arrival tracking</Text>
-        </View>
+          </View>
           <TouchableOpacity
             style={styles.refreshButton} 
             onPress={handleManualRefresh}
@@ -1777,8 +1785,8 @@ export default function ArrivalsDashboard() {
           >
             <RefreshCw size={20} color="#FFFFFF" />
           </TouchableOpacity>
-          </View>
         </View>
+      </LinearGradient>
 
       {/* Search Bar and Date Picker */}
         <View style={styles.searchContainer}>
@@ -1803,7 +1811,7 @@ export default function ArrivalsDashboard() {
           style={styles.datePickerButton}
           onPress={() => setShowDatePicker(true)}
         >
-          <Calendar size={18} color={isDark ? '#3B82F6' : '#1D4ED8'} />
+          <Calendar size={18} color={theme.primary} />
           <Text style={styles.datePickerText}>
             {selectedDate === new Date().toISOString().split('T')[0] 
               ? 'Today' 
@@ -1893,7 +1901,7 @@ export default function ArrivalsDashboard() {
                 {/* Route Header */}
                 <View style={styles.routeHeader}>
                   <View style={styles.routeHeaderLeft}>
-                    <Bus size={20} color={isDark ? '#3B82F6' : '#1D4ED8'} />
+                    <Bus size={20} color={theme.primary} />
                     <View style={styles.routeHeaderText}>
                       <Text style={styles.routeId}>{route.routeId.toUpperCase()}</Text>
                       <Text style={styles.routeDescription}>
@@ -2026,16 +2034,19 @@ export default function ArrivalsDashboard() {
   );
 }
 
-const getStyles = (isDark: boolean) => StyleSheet.create({
+const getStyles = (isDark: boolean) => {
+  const theme = colors[isDark ? 'dark' : 'light'];
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: isDark ? '#0F172A' : '#F1F5F9',
+    backgroundColor: theme.background,
   },
   header: {
-    backgroundColor: '#3B82F6',
-    paddingTop: 50,
-    paddingBottom: 20,
+    paddingTop: 60,
+    paddingBottom: 24,
     paddingHorizontal: 20,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
   },
   headerContent: {
     flexDirection: 'row',
@@ -2043,8 +2054,14 @@ const getStyles = (isDark: boolean) => StyleSheet.create({
     justifyContent: 'space-between',
   },
   backButton: {
-    padding: 8,
-    marginLeft: -8,
+    width: 44,
+    height: 44,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'flex-start',
   },
   headerTitleContainer: {
     flex: 1,
@@ -2057,9 +2074,10 @@ const getStyles = (isDark: boolean) => StyleSheet.create({
     marginBottom: 2,
   },
   headerSubtitle: {
-    fontSize: 13,
-    color: '#FFFFFF',
-    opacity: 0.9,
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.9)',
+    marginTop: 2,
+    fontWeight: '400',
   },
   statusIndicator: {
     flexDirection: 'row',
@@ -2091,14 +2109,14 @@ const getStyles = (isDark: boolean) => StyleSheet.create({
     letterSpacing: 0.5,
   },
   refreshButton: {
-    padding: 8,
-    marginRight: -8,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+  },
+  refreshButton: {
     width: 40,
     height: 40,
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'flex-end',
   },
   searchContainer: {
     backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
@@ -2136,7 +2154,7 @@ const getStyles = (isDark: boolean) => StyleSheet.create({
   },
   datePickerText: {
     fontSize: 14,
-    color: isDark ? '#3B82F6' : '#1D4ED8',
+    color: theme.primary,
     fontWeight: '600',
   },
   modalOverlay: {
@@ -2187,7 +2205,7 @@ const getStyles = (isDark: boolean) => StyleSheet.create({
     alignItems: 'center',
   },
   modalButtonPrimary: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: theme.primary,
   },
   modalButtonSecondary: {
     backgroundColor: isDark ? '#334155' : '#F1F5F9',
@@ -2237,7 +2255,7 @@ const getStyles = (isDark: boolean) => StyleSheet.create({
     marginTop: 4,
   },
   filterButton: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: theme.primary,
     padding: 12,
     borderRadius: 12,
   },
@@ -2370,7 +2388,7 @@ const getStyles = (isDark: boolean) => StyleSheet.create({
     fontWeight: '600',
   },
   selectRouteButton: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: theme.primary,
     paddingVertical: 12,
     paddingHorizontal: 24,
     borderRadius: 8,
@@ -2563,7 +2581,7 @@ const getStyles = (isDark: boolean) => StyleSheet.create({
     marginBottom: 8,
   },
   selectedCalendarDay: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: theme.primary,
     borderRadius: 20,
   },
   calendarDayWithData: {
@@ -2647,8 +2665,8 @@ const getStyles = (isDark: boolean) => StyleSheet.create({
     backgroundColor: isDark ? '#334155' : '#FFFFFF',
   },
   statusButtonActive: {
-    backgroundColor: '#3B82F6',
-    borderColor: '#3B82F6',
+    backgroundColor: theme.primary,
+    borderColor: theme.primary,
   },
   statusButtonText: {
     fontSize: 14,
@@ -2679,7 +2697,7 @@ const getStyles = (isDark: boolean) => StyleSheet.create({
   },
   applyButton: {
     flex: 1,
-    backgroundColor: '#3B82F6',
+    backgroundColor: theme.primary,
     paddingVertical: 12,
     borderRadius: 8,
     alignItems: 'center',
@@ -2693,10 +2711,10 @@ const getStyles = (isDark: boolean) => StyleSheet.create({
   trackerContainer: {
     marginTop: 12,
     padding: 12,
-    backgroundColor: isDark ? '#334155' : '#F8FAFC',
+    backgroundColor: theme.surface,
     borderRadius: 8,
     borderLeftWidth: 4,
-    borderLeftColor: '#3B82F6',
+    borderLeftColor: theme.primary,
   },
   trackerHeader: {
     flexDirection: 'row',
@@ -2850,4 +2868,5 @@ const getStyles = (isDark: boolean) => StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '600',
   },
-});
+  });
+};

@@ -12,6 +12,7 @@
       "extra": {
         "apiUrl": "http://192.168.29.190:4000"
       },
+    
     "ios": {
       "bundleIdentifier": "com.vit-ap.transport",
       "buildNumber": "1.0.0",
@@ -32,10 +33,7 @@
     },
     "plugins": [
       "expo-router",
-      "expo-video",
-      "expo-audio",
-      "expo-font",
-      "expo-web-browser"
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true

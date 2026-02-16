@@ -8,6 +8,7 @@ import {
   
 } from 'firebase/auth';
 //import { doc, setDoc,getDoc,updateDoc } from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth, db, } from '../../config/firebase';
 import { User, AuthError, } from '../../types/auth';
 import { sendPasswordResetEmail } from 'firebase/auth';
@@ -60,24 +61,55 @@ const saveRouteToMongoDB = async (userId: string, routeId: string) => {
 };
 
 const fetchRouteFromMongoDB = async (userId: string) => {
+  // First check local storage (fastest and always available)
+  try {
+    const localRoute = await AsyncStorage.getItem(`selectedRoute_${userId}`);
+    if (localRoute) {
+      return localRoute;
+    }
+  } catch (storageError) {
+    console.warn('Error reading from AsyncStorage:', storageError);
+  }
+  
+  // Then try backend (optional)
   try {
     const token = await auth.currentUser?.getIdToken();
-    const response = await fetch(`${API_CONFIG.BASE_URL}/api/users/${userId}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      }
-    });
+    if (!token) return null;
     
-    if (response.ok) {
-      const data = await response.json();
-      if (data.success && data.user?.selectedRoute) {
-        return data.user.selectedRoute;
+    // Add timeout to prevent hanging requests
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+    
+    try {
+      const response = await fetch(`${API_CONFIG.BASE_URL}/api/users/${userId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        signal: controller.signal,
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.user?.selectedRoute) {
+          // Save to local storage for future use
+          await AsyncStorage.setItem(`selectedRoute_${userId}`, data.user.selectedRoute);
+          return data.user.selectedRoute;
+        }
+      }
+    } catch (fetchError: any) {
+      clearTimeout(timeoutId);
+      if (fetchError.name !== 'AbortError') {
+        // Backend unavailable, but we already checked local storage
+        console.log('Backend unavailable, using local storage');
       }
     }
+    
     return null;
-  } catch (error) {
-    console.error('Error fetching route from MongoDB:', error);
+  } catch (error: any) {
+    // Backend error, but local storage already checked
     return null;
   }
 };
@@ -333,17 +365,23 @@ const resetPassword = async (email: string) => {
     setIsLoading(false);
   }
 };
- // New: setSelectedRouteId function to save route in Firestore and state
+ // New: setSelectedRouteId function to save route locally and optionally to backend
   const saveSelectedRouteId = async (routeId: string) => {
     setSelectedRouteIdState(routeId);
 
     if (!user) return;
 
     try {
+      // Always save to local storage first (works offline)
+      await AsyncStorage.setItem(`selectedRoute_${user.uid}`, routeId);
+      
+      // Try to save to backend (optional, non-blocking)
+      try {
         await saveRouteToMongoDB(user.uid, routeId);
-    //setUser(prev => (prev ? { ...prev, route: routeId } : prev);
-      // const userRef = doc(db, 'users', user.uid);
-      // await setDoc(userRef, { route: routeId }, { merge: true });
+      } catch (backendError) {
+        // Backend unavailable, but route is saved locally
+        console.log('Backend unavailable, route saved locally');
+      }
 
       setUser((prev) => (prev ? { ...prev, route: routeId } : prev));
     } catch (err) {

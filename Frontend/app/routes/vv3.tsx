@@ -1,39 +1,47 @@
 import React, { useRef, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal } from "react-native";
-import { MapPin, Clock, Users, X } from "lucide-react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, StatusBar, Dimensions } from "react-native";
+import { MapPin, Clock, Users, X, ArrowLeft } from "lucide-react-native";
 import { WebView } from "react-native-webview";
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
+import { useTheme } from '../(auth)/context/ThemeContext';
+import { colors } from '../constants/colors';
 
-// VV1-specific data
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+// VV3-specific data
 const routeData = {
   title: "VV3 Bus Route",
-    description: "kamayyathopu center to screw bridge",
-    stops: ["kamayyathopu center", "pappula mill center", "ashok nagar", "time hospital","auto nagar gate","screw bridge"],
-    schedule: [
-      { time: "07:40 AM", status: "On Time" },
-      { time: "07:42 AM", status: "On Time" },
-      { time: "07:45 AM", status: "Delayed by 5m" },
-      { time: "07:47 AM", status: "On Time" },
-      { time: "07:48 AM", status: "On Time" },
-      { time: "07:58 AM", status: "On Time" },
-      
-    ],
-    occupancy: "Medium",
-    coordinates: {
-      center: [78.4867, 17.3850],
-      stops: [
-        [78.4867, 17.3850],
-        [78.4900, 17.3880],
-        [78.4930, 17.3900],
-        [78.4960, 17.3920]
-      ]
-    }
+  description: "kamayyathopu center to screw bridge",
+  stops: ["kamayyathopu center", "pappula mill center", "ashok nagar", "time hospital","auto nagar gate","screw bridge"],
+  schedule: [
+    { time: "07:40 AM", status: "On Time" },
+    { time: "07:42 AM", status: "On Time" },
+    { time: "07:45 AM", status: "Delayed by 5m" },
+    { time: "07:47 AM", status: "On Time" },
+    { time: "07:48 AM", status: "On Time" },
+    { time: "07:58 AM", status: "On Time" },
+  ],
+  occupancy: "Medium",
+  coordinates: {
+    center: [78.4867, 17.3850],
+    stops: [
+      [78.4867, 17.3850],
+      [78.4900, 17.3880],
+      [78.4930, 17.3900],
+      [78.4960, 17.3920]
+    ]
+  }
 };
 
-export default function VV1Route() {
-  const webViewRef = useRef(null);
+export default function VV3Route() {
+  const router = useRouter();
+  const { isDark } = useTheme();
+  const theme = colors[isDark ? 'dark' : 'light'];
+  const webViewRef = useRef<any>(null);
   const [mapExpanded, setMapExpanded] = useState(false);
 
-  // Mapbox HTML (same as original)
+  // Mapbox HTML
   const mapHtml = `
   <!DOCTYPE html>
   <html>
@@ -94,153 +102,233 @@ export default function VV1Route() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>{routeData.title}</Text>
-        <Text style={styles.description}>{routeData.description}</Text>
-      </View>
-
-      {/* Map */}
-      <TouchableOpacity 
-        style={styles.mapContainer} 
-        activeOpacity={0.9}
-        onPress={toggleMapExpansion}
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
+      
+      <ScrollView 
+        style={styles.scrollView} 
+        contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
       >
-        <WebView
-          ref={webViewRef}
-          source={{ html: mapHtml }}
-          style={styles.map}
-          originWhitelist={['*']}
-          javaScriptEnabled
-          domStorageEnabled
-        />
-        <View style={styles.mapOverlay}>
-          <Text style={styles.mapOverlayText}>Tap to expand</Text>
+        {/* Full Screen Map at Top */}
+        <View style={styles.mapWrapper}>
+          <View style={styles.mapContainer}>
+            <WebView
+              ref={webViewRef}
+              source={{ html: mapHtml }}
+              style={styles.map}
+              originWhitelist={['*']}
+              javaScriptEnabled
+              domStorageEnabled
+            />
+            
+            {/* Header Overlay */}
+            <LinearGradient
+              colors={['rgba(58, 12, 163, 0.9)', 'rgba(58, 12, 163, 0.7)', 'transparent']}
+              style={styles.mapHeaderOverlay}
+            >
+              <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                <ArrowLeft size={24} color="#FFFFFF" />
+              </TouchableOpacity>
+              <View style={styles.headerContent}>
+                <Text style={styles.title}>{routeData.title}</Text>
+                <Text style={styles.description}>{routeData.description}</Text>
+              </View>
+            </LinearGradient>
+            
+            {/* Bottom Gradient Overlay */}
+            <LinearGradient
+              colors={['transparent', 'rgba(0,0,0,0.3)']}
+              style={styles.mapBottomOverlay}
+            >
+              <TouchableOpacity 
+                style={styles.expandButton}
+                onPress={toggleMapExpansion}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.expandButtonText}>Tap to expand map</Text>
+              </TouchableOpacity>
+            </LinearGradient>
+          </View>
         </View>
-      </TouchableOpacity>
+
+        {/* Bus Stops */}
+        <View style={[styles.infoCard, { backgroundColor: theme.surface }]}>
+          <View style={styles.cardHeader}>
+            <MapPin size={20} color={theme.primary} />
+            <Text style={[styles.cardTitle, { color: theme.text }]}>Bus Stops</Text>
+          </View>
+          <View style={styles.stopsContainer}>
+            {routeData.stops.map((stop, i) => (
+              <View key={i} style={styles.stopItem}>
+                <View style={[styles.stopDot, { backgroundColor: theme.primary }]} />
+                <Text style={[styles.stopText, { color: theme.text }]}>{stop}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* Schedule */}
+        <View style={[styles.infoCard, { backgroundColor: theme.surface }]}>
+          <View style={styles.cardHeader}>
+            <Clock size={20} color={theme.primary} />
+            <Text style={[styles.cardTitle, { color: theme.text }]}>Schedule</Text>
+          </View>
+          <View style={styles.scheduleContainer}>
+            {routeData.schedule.map((item, i) => (
+              <View key={i} style={styles.scheduleItem}>
+                <Text style={[styles.scheduleTime, { color: theme.text }]}>{item.time}</Text>
+                <Text style={[
+                  styles.scheduleStatus,
+                  { color: item.status.includes("Delayed") ? theme.warning : theme.success }
+                ]}>
+                  {item.status}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* Occupancy */}
+        <View style={[styles.infoCard, { backgroundColor: theme.surface }]}>
+          <View style={styles.cardHeader}>
+            <Users size={20} color={theme.primary} />
+            <Text style={[styles.cardTitle, { color: theme.text }]}>Current Occupancy</Text>
+          </View>
+          <View style={styles.occupancyContainer}>
+            <View style={[
+              styles.occupancyIndicator,
+              { backgroundColor: 
+                routeData.occupancy === "High" ? theme.error : 
+                routeData.occupancy === "Medium" ? theme.warning : theme.success
+              }
+            ]} />
+            <Text style={[styles.occupancyText, { color: theme.text }]}>{routeData.occupancy}</Text>
+          </View>
+        </View>
+      </ScrollView>
 
       {/* Expanded Map Modal */}
       <Modal visible={mapExpanded} transparent={false} animationType="fade">
-        <View style={styles.expandedMapContainer}>
+        <View style={[styles.expandedMapContainer, { backgroundColor: theme.background }]}>
+          <LinearGradient
+            colors={theme.gradientOmbreHeader}
+            style={styles.modalHeader}
+          >
+            <Text style={styles.modalTitle}>Live Bus Tracking</Text>
+            <TouchableOpacity 
+              style={styles.closeButton} 
+              onPress={toggleMapExpansion}
+            >
+              <X size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+          </LinearGradient>
           <WebView
             ref={webViewRef}
             source={{ html: mapHtml }}
             style={styles.expandedMap}
             onLoad={handleMapResize}
           />
-          <TouchableOpacity 
-            style={styles.closeButton} 
-            onPress={toggleMapExpansion}
-          >
-            <X size={24} color="#FFFFFF" />
-          </TouchableOpacity>
         </View>
       </Modal>
-
-      {/* Bus Stops */}
-      <View style={styles.infoCard}>
-        <View style={styles.cardHeader}>
-          <MapPin size={20} color="#3366FF" />
-          <Text style={styles.cardTitle}>Bus Stops</Text>
-        </View>
-        <View style={styles.stopsContainer}>
-          {routeData.stops.map((stop, i) => (
-            <View key={i} style={styles.stopItem}>
-              <View style={styles.stopDot} />
-              <Text style={styles.stopText}>{stop}</Text>
-            </View>
-          ))}
-        </View>
-      </View>
-
-      {/* Schedule */}
-      <View style={styles.infoCard}>
-        <View style={styles.cardHeader}>
-          <Clock size={20} color="#3366FF" />
-          <Text style={styles.cardTitle}>Schedule</Text>
-        </View>
-        <View style={styles.scheduleContainer}>
-          {routeData.schedule.map((item, i) => (
-            <View key={i} style={styles.scheduleItem}>
-              <Text style={styles.scheduleTime}>{item.time}</Text>
-              <Text style={[
-                styles.scheduleStatus,
-                item.status.includes("Delayed") ? styles.delayed : styles.onTime
-              ]}>
-                {item.status}
-              </Text>
-            </View>
-          ))}
-        </View>
-      </View>
-
-      {/* Occupancy */}
-      <View style={styles.infoCard}>
-        <View style={styles.cardHeader}>
-          <Users size={20} color="#3366FF" />
-          <Text style={styles.cardTitle}>Current Occupancy</Text>
-        </View>
-        <View style={styles.occupancyContainer}>
-          <View style={[
-            styles.occupancyIndicator,
-            { backgroundColor: 
-              routeData.occupancy === "High" ? "#EF4444" : 
-              routeData.occupancy === "Medium" ? "#F59E0B" : "#10B981"
-            }
-          ]} />
-          <Text style={styles.occupancyText}>{routeData.occupancy}</Text>
-        </View>
-      </View>
-    </ScrollView>
+    </View>
   );
 }
 
-// Styles (same as original)
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F8FAFC",
+  },
+  scrollView: {
+    flex: 1,
   },
   contentContainer: {
     paddingBottom: 40,
   },
-  header: {
-    padding: 16,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#1E293B",
-  },
-  description: {
-    fontSize: 14,
-    color: "#475569",
-    marginTop: 4,
+  mapWrapper: {
+    height: SCREEN_HEIGHT,
+    width: '100%',
   },
   mapContainer: {
-    height: 220,
-    margin: 16,
-    borderRadius: 12,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
+    flex: 1,
+    position: 'relative',
   },
   map: {
     flex: 1,
   },
-  mapOverlay: {
-    position: "absolute",
-    bottom: 8,
-    right: 8,
-    backgroundColor: "rgba(0,0,0,0.4)",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+  mapHeaderOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingTop: 60,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  mapOverlayText: {
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  headerContent: {
+    flex: 1,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: "700",
     color: "#FFFFFF",
-    fontSize: 12,
+  },
+  description: {
+    fontSize: 14,
+    color: "#FFFFFF",
+    marginTop: 4,
+    opacity: 0.9,
+  },
+  mapBottomOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingBottom: 40,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+  },
+  expandButton: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+  expandButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 50,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  closeButton: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    padding: 8,
+    borderRadius: 20,
   },
   expandedMapContainer: {
     flex: 1,
@@ -248,25 +336,16 @@ const styles = StyleSheet.create({
   expandedMap: {
     flex: 1,
   },
-  closeButton: {
-    position: "absolute",
-    top: 40,
-    right: 20,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    padding: 12,
-    borderRadius: 24,
-  },
   infoCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
     marginHorizontal: 16,
     marginTop: 16,
     shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
+    elevation: 4,
   },
   cardHeader: {
     flexDirection: "row",
@@ -276,7 +355,6 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 18,
     fontWeight: "600",
-    color: "#1E293B",
     marginLeft: 8,
   },
   stopsContainer: {
@@ -291,12 +369,10 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: "#3366FF",
     marginRight: 12,
   },
   stopText: {
     fontSize: 16,
-    color: "#334155",
   },
   scheduleContainer: {
     marginLeft: 8,
@@ -308,17 +384,10 @@ const styles = StyleSheet.create({
   },
   scheduleTime: {
     fontSize: 16,
-    color: "#334155",
   },
   scheduleStatus: {
     fontSize: 16,
     fontWeight: "600",
-  },
-  onTime: {
-    color: "#10B981",
-  },
-  delayed: {
-    color: "#F59E0B",
   },
   occupancyContainer: {
     flexDirection: "row",
@@ -332,7 +401,6 @@ const styles = StyleSheet.create({
   },
   occupancyText: {
     fontSize: 16,
-    color: "#334155",
     fontWeight: "600",
   },
 });

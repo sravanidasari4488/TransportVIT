@@ -1,8 +1,12 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar } from 'react-native';
+import React, { useRef, useEffect, useState } from 'react';
+import { View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity, StatusBar, Animated, Dimensions } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, Bus, MapPin } from 'lucide-react-native';
+import { ArrowLeft, Bus, MapPin, ArrowRight, Search, Filter, Sparkles } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../(auth)/context/ThemeContext';
+import { colors } from '../constants/colors';
+
+const { width } = Dimensions.get('window');
 
 const busRoutes = [
   {
@@ -40,6 +44,34 @@ const busRoutes = [
 export default function BusRoutes() {
   const router = useRouter();
   const { isDark } = useTheme();
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Animations
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
+  const scaleAnim = useRef(new Animated.Value(0.95)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        tension: 50,
+        friction: 7,
+        useNativeDriver: true,
+      }),
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        tension: 50,
+        friction: 7,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
 
   const handleBackPress = () => {
     router.back();
@@ -49,145 +81,415 @@ export default function BusRoutes() {
     router.push(`/routes/${routeId}`);
   };
 
-  const styles = getStyles(isDark);
+  const theme = colors[isDark ? 'dark' : 'light'];
+
+  const filteredRoutes = busRoutes.map(citySection => ({
+    ...citySection,
+    routes: citySection.routes.filter(route =>
+      route.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      route.from.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      route.to.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+  })).filter(citySection => citySection.routes.length > 0);
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#1E293B' : '#FFFFFF'} />
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={theme.primary} />
 
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
-          <ArrowLeft size={24} color={isDark ? '#FFFFFF' : '#1E293B'} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Select a Bus Route</Text>
-        <View style={styles.placeholder} />
-      </View>
+      {/* Ombre Header */}
+      <LinearGradient
+        colors={theme.gradientOmbreHeader || theme.gradientOmbre}
+        style={styles.header}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      >
+        <Animated.View
+          style={[
+            styles.headerContent,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            },
+          ]}
+        >
+          <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
+            <ArrowLeft size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+          <View style={styles.headerTitleContainer}>
+            <Text style={styles.headerTitle}>Bus Routes</Text>
+            <Text style={styles.headerSubtitle}>Monitor bus operations</Text>
+          </View>
+          <View style={styles.placeholder} />
+        </Animated.View>
+      </LinearGradient>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {busRoutes.map((citySection, cityIndex) => (
-          <View key={cityIndex} style={styles.citySection}>
-            <Text style={styles.cityTitle}>{citySection.city} Routes</Text>
+      {/* Search Bar */}
+      <Animated.View
+        style={[
+          styles.searchContainer,
+          {
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }],
+          },
+        ]}
+      >
+        <View style={[styles.searchBar, { backgroundColor: theme.surface }]}>
+          <Search size={20} color={theme.textSecondary} />
+          <TextInput
+            style={[styles.searchInput, { color: theme.text }]}
+            placeholder="Search routes..."
+            placeholderTextColor={theme.textSecondary}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Text style={[styles.clearButton, { color: theme.primary }]}>Clear</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </Animated.View>
+
+      <ScrollView 
+        style={styles.content} 
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {filteredRoutes.map((citySection, cityIndex) => (
+          <Animated.View
+            key={cityIndex}
+            style={[
+              styles.citySection,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }],
+              },
+            ]}
+          >
+            <View style={styles.cityHeader}>
+              <LinearGradient
+                colors={[theme.primary + '20', theme.primary + '10']}
+                style={styles.cityIconContainer}
+              >
+                <MapPin size={22} color={theme.primary} />
+              </LinearGradient>
+              <View style={styles.cityInfo}>
+                <Text style={[styles.cityTitle, { color: theme.text }]}>{citySection.city} Routes</Text>
+                <Text style={[styles.citySubtitle, { color: theme.textSecondary }]}>
+                  {citySection.routes.length} route{citySection.routes.length !== 1 ? 's' : ''} available
+                </Text>
+              </View>
+            </View>
             <View style={styles.routesGrid}>
-              {citySection.routes.map((route) => (
-                <TouchableOpacity
+              {citySection.routes.map((route, index) => (
+                <RouteCard
                   key={route.id}
-                  style={styles.routeButton}
+                  route={route}
                   onPress={() => handleRoutePress(route.id)}
-                >
-                  <View style={styles.routeHeader}>
-                    <Bus size={20} color={isDark ? '#3B82F6' : '#1D4ED8'} />
-                    <Text style={styles.routeName}>{route.name}</Text>
-                  </View>
-                  <View style={styles.routeDetails}>
-                    <View style={styles.routePoint}>
-                      <MapPin size={14} color={isDark ? '#94A3B8' : '#64748B'} />
-                      <Text style={styles.routeText} numberOfLines={1}>{route.from}</Text>
-                    </View>
-                    <View style={styles.routeDivider} />
-                    <View style={styles.routePoint}>
-                      <MapPin size={14} color={isDark ? '#94A3B8' : '#64748B'} />
-                      <Text style={styles.routeText} numberOfLines={1}>{route.to}</Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
+                  delay={index * 40}
+                  fadeAnim={fadeAnim}
+                  slideAnim={slideAnim}
+                  theme={theme}
+                />
               ))}
             </View>
-          </View>
+          </Animated.View>
         ))}
       </ScrollView>
     </View>
   );
 }
 
-const getStyles = (isDark: boolean) => StyleSheet.create({
+interface RouteCardProps {
+  route: { id: string; name: string; from: string; to: string };
+  onPress: () => void;
+  delay: number;
+  fadeAnim: Animated.Value;
+  slideAnim: Animated.Value;
+  theme: any;
+}
+
+const RouteCard = ({ route, onPress, delay, fadeAnim, slideAnim, theme }: RouteCardProps) => {
+  const cardAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const [isPressed, setIsPressed] = useState(false);
+
+  useEffect(() => {
+    Animated.sequence([
+      Animated.delay(delay),
+      Animated.timing(cardAnim, {
+        toValue: 1,
+        duration: 400,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
+  const handlePressIn = () => {
+    setIsPressed(true);
+    Animated.spring(scaleAnim, {
+      toValue: 0.96,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    setIsPressed(false);
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  return (
+    <Animated.View
+      style={[
+        {
+          opacity: cardAnim,
+          transform: [{ scale: scaleAnim }],
+        },
+      ]}
+    >
+      <TouchableOpacity
+        style={[
+          styles.routeCard,
+          {
+            backgroundColor: theme.surface,
+            borderColor: isPressed ? theme.primary : theme.border,
+          },
+        ]}
+        onPress={onPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        activeOpacity={0.9}
+      >
+        <LinearGradient
+          colors={[theme.primary + '10', 'transparent']}
+          style={styles.routeCardGradient}
+        >
+          <View style={styles.routeCardContent}>
+            <View style={styles.routeHeader}>
+              <View style={[styles.routeIconContainer, { backgroundColor: theme.primary + '20' }]}>
+                <Bus size={24} color={theme.primary} strokeWidth={2.5} />
+                <View style={styles.sparkleBadge}>
+                  <Sparkles size={10} color={theme.primary} fill={theme.primary} />
+                </View>
+              </View>
+              <Text style={[styles.routeName, { color: theme.text }]}>{route.name}</Text>
+            </View>
+            <View style={styles.routeDetails}>
+              <View style={styles.routePoint}>
+                <View style={[styles.routeDot, { backgroundColor: theme.primary }]} />
+                <Text style={[styles.routeText, { color: theme.textSecondary }]} numberOfLines={1}>
+                  {route.from}
+                </Text>
+              </View>
+              <View style={[styles.routeDivider, { backgroundColor: theme.border }]} />
+              <View style={styles.routePoint}>
+                <View style={[styles.routeDot, { backgroundColor: theme.accent }]} />
+                <Text style={[styles.routeText, { color: theme.textSecondary }]} numberOfLines={1}>
+                  {route.to}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.routeArrow}>
+              <LinearGradient
+                colors={[theme.primary, theme.accent]}
+                style={styles.arrowGradient}
+              >
+                <ArrowRight size={18} color="#FFFFFF" />
+              </LinearGradient>
+            </View>
+          </View>
+        </LinearGradient>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+};
+
+const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: isDark ? '#0F172A' : '#F8FAFC',
   },
   header: {
+    paddingTop: 60,
+    paddingBottom: 24,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+  },
+  headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 50,
-    paddingBottom: 20,
     paddingHorizontal: 20,
-    backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: isDark ? '#334155' : '#E2E8F0',
   },
   backButton: {
-    padding: 8,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+  },
+  headerTitleContainer: {
+    flex: 1,
+    alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: isDark ? '#F1F5F9' : '#1E293B',
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.9)',
+    marginTop: 4,
+    fontWeight: '400',
   },
   placeholder: {
     width: 40,
   },
+  searchContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 12,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  clearButton: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
   content: {
     flex: 1,
-    padding: 20,
+  },
+  scrollContent: {
+    paddingTop: 12,
+    paddingBottom: 40,
   },
   citySection: {
     marginBottom: 32,
+    paddingHorizontal: 20,
+  },
+  cityHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  cityIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
+  },
+  cityInfo: {
+    flex: 1,
   },
   cityTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: isDark ? '#F1F5F9' : '#1E293B',
-    marginBottom: 16,
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  citySubtitle: {
+    fontSize: 14,
+    fontWeight: '500',
   },
   routesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
   },
-  routeButton: {
-    width: '48%',
-    backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
+  routeCard: {
+    width: (width - 48) / 2,
     marginBottom: 16,
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 2,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: isDark ? 0.3 : 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  routeCardGradient: {
+    padding: 18,
+  },
+  routeCardContent: {
+    position: 'relative',
   },
   routeHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
+  },
+  routeIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+    position: 'relative',
+  },
+  sparkleBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
   },
   routeName: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: isDark ? '#F1F5F9' : '#1E293B',
-    marginLeft: 8,
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   routeDetails: {
-    flex: 1,
+    marginBottom: 12,
   },
   routePoint: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 8,
+    gap: 10,
+  },
+  routeDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   routeText: {
-    fontSize: 14,
-    color: isDark ? '#CBD5E1' : '#374151',
-    marginLeft: 6,
+    fontSize: 13,
+    fontWeight: '500',
     flex: 1,
   },
   routeDivider: {
-    width: 2,
-    height: 16,
-    backgroundColor: isDark ? '#334155' : '#E2E8F0',
-    marginLeft: 7,
-    marginVertical: 4,
+    height: 1,
+    marginVertical: 8,
+    marginLeft: 18,
+  },
+  routeArrow: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+  },
+  arrowGradient: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
-
