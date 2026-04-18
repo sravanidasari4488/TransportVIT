@@ -1,0 +1,10 @@
+{
+  "name": "vit-bus-app",
+  "private": true,
+  "scripts": {
+    "start": "cd Frontend && npx expo start",
+    "android": "cd Frontend && npx expo start --android",
+    "ios": "cd Frontend && npx expo start --ios",
+    "web": "cd Frontend && npx expo start --web"
+  }
+}

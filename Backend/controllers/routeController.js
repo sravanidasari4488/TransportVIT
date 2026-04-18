@@ -207,17 +207,26 @@ exports.getStopsByRoute = async (req, res) => {
 exports.getRouteStopsWithArrivals = async (req, res) => {
     try {
         const { routeId } = req.params;
+        const { date } = req.query; // Optional: YYYY-MM-DD for historical dates
         const route = await BusRoute.findOne({ routeId: routeId.toUpperCase() });
 
         if (!route) {
             return res.status(404).json({ error: "Route not found" });
         }
 
-        // Get today's arrivals for this route
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const tomorrow = new Date(today);
-        tomorrow.setDate(tomorrow.getDate() + 1);
+        // Use selected date or today
+        let startDate, endDate;
+        if (date) {
+            startDate = new Date(date);
+            startDate.setHours(0, 0, 0, 0);
+            endDate = new Date(date);
+            endDate.setHours(23, 59, 59, 999);
+        } else {
+            startDate = new Date();
+            startDate.setHours(0, 0, 0, 0);
+            endDate = new Date(startDate);
+            endDate.setDate(endDate.getDate() + 1);
+        }
 
         const Arrival = require("../models/Arrival");
         // Query arrivals case-insensitively
@@ -227,7 +236,7 @@ exports.getRouteStopsWithArrivals = async (req, res) => {
                 { routeId: routeId.toLowerCase() },
                 { routeId: routeId }
             ],
-            arrivalTimestamp: { $gte: today, $lt: tomorrow }
+            arrivalTimestamp: { $gte: startDate, $lte: endDate }
         }).sort({ arrivalTimestamp: 1 });
 
         // Create a map of stop name to arrival data (case-insensitive matching)
@@ -241,7 +250,8 @@ exports.getRouteStopsWithArrivals = async (req, res) => {
                     actualTime: arrival.actualTime,
                     arrivalTimestamp: arrival.arrivalTimestamp,
                     delay: arrival.delay,
-                    status: arrival.status
+                    status: arrival.status,
+                    location: arrival.location // GPS coords when bus reached stop
                 };
             }
         });
@@ -250,13 +260,23 @@ exports.getRouteStopsWithArrivals = async (req, res) => {
         const routeStops = route.stops || [];
         
         // Combine route stops with arrival data (case-insensitive matching)
+        // Use server data: routes, bus stop coordinates, and reached time
         const stopsWithArrivals = routeStops.map(stop => {
-            // Match by lowercase stop name for case-insensitive lookup
             const stopKey = stop.name.toLowerCase();
             const arrival = arrivalMap[stopKey];
+            // Coordinates: prefer route stop location, fallback to arrival's GPS when bus reached
+            const stopLoc = stop.location;
+            const hasStopCoords = stopLoc && (stopLoc.lat || stopLoc.lon);
+            const arrivalLoc = arrival?.location;
+            const hasArrivalCoords = arrivalLoc && (arrivalLoc.lat || arrivalLoc.lng);
+            const location = hasStopCoords
+                ? { lat: stopLoc.lat, lon: stopLoc.lon || stopLoc.lng }
+                : hasArrivalCoords
+                    ? { lat: arrivalLoc.lat, lon: arrivalLoc.lng }
+                    : { lat: 0, lon: 0 };
             return {
                 name: stop.name,
-                location: stop.location || { lat: 0, lon: 0 },
+                location,
                 scheduledTime: stop.scheduledTime || 'N/A',
                 actualTime: arrival ? arrival.actualTime : null,
                 arrivalTimestamp: arrival ? arrival.arrivalTimestamp : null,

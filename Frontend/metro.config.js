@@ -1,8 +1,13 @@
 // metro.config.js
+const path = require("path");
 const { getDefaultConfig } = require("expo/metro-config");
 
+const projectRoot = __dirname;
+const config = getDefaultConfig(projectRoot);
 
-const config = getDefaultConfig(__dirname);
+// Pin watch roots to this app only (avoids Metro crawling the user profile if CLI cwd is wrong).
+config.projectRoot = projectRoot;
+config.watchFolders = [path.resolve(projectRoot)];
 
 // -----------------------------------------------------------------------------
 // Firebase / Expo SDK 53: allow “.cjs” files and use classic Node “exports”

@@ -557,24 +557,28 @@ export default function ArrivalsDashboard() {
       const routesWithStops = await Promise.all(
         availableRoutes.map(async (route) => {
           try {
-            // Try with uppercase routeId first
+            // Try with uppercase routeId first; include date for historical view
             const routeIdUpper = route.routeId.toUpperCase();
-            let response = await fetch(`${API_CONFIG.BASE_URL}/api/routes/${routeIdUpper}/stops-with-arrivals`);
+            const dateParam = selectedDate ? `?date=${selectedDate}` : '';
+            let response = await fetch(`${API_CONFIG.BASE_URL}/api/routes/${routeIdUpper}/stops-with-arrivals${dateParam}`);
             
             // If 404, try with original case
             if (!response.ok && response.status === 404) {
-              response = await fetch(`${API_CONFIG.BASE_URL}/api/routes/${route.routeId}/stops-with-arrivals`);
+              response = await fetch(`${API_CONFIG.BASE_URL}/api/routes/${route.routeId}/stops-with-arrivals${dateParam}`);
             }
             
             let stops: StopWithArrival[] = [];
             let arrivalData: any[] = [];
             
-            // Try to fetch arrivals for this route (use same endpoint as routes page)
+            // Try to fetch arrivals for this route (server data for reached time)
             try {
-              // Try the /today endpoint first (same as routes page uses)
-              let arrivalsResponse = await fetch(`${API_CONFIG.BASE_URL}/api/arrivals/route/${route.routeId.toLowerCase()}/today`);
+              const todayStr = new Date().toISOString().split('T')[0];
+              const useDate = selectedDate && selectedDate !== todayStr ? selectedDate : null;
+              const arrivalsUrl = useDate
+                ? `${API_CONFIG.BASE_URL}/api/arrivals/route/${routeIdUpper}?date=${useDate}&today=false&limit=100`
+                : `${API_CONFIG.BASE_URL}/api/arrivals/route/${route.routeId.toLowerCase()}/today`;
+              let arrivalsResponse = await fetch(arrivalsUrl);
               
-              // If that fails, try with uppercase and query parameter
               if (!arrivalsResponse.ok) {
                 arrivalsResponse = await fetch(`${API_CONFIG.BASE_URL}/api/arrivals/route/${routeIdUpper}?today=true&limit=100`);
               }
@@ -987,33 +991,45 @@ export default function ArrivalsDashboard() {
             const data = await response.json();
             
             if (data.success && data.stops && data.stops.length > 0) {
-              // Merge arrival data with stops from API
-              // Prioritize arrival data from /api/arrivals/route endpoint (same as routes page)
+              // Use server data as primary: routes, bus stop coordinates, and reached time from backend
               stops = data.stops.map((stop: any) => {
                 const stopKey = (stop.name || '').toLowerCase().trim();
                 const arrival = arrivalMap[stopKey];
-                
-                // Get GPS coordinates from MongoDB Atlas if available
                 const gpsCoords = stopCoordinatesMap[stopKey];
                 
-                // Use GPS timestamp from MongoDB if available, otherwise use arrival timestamp
-                const gpsTimestamp = gpsCoords?.timestamp || (arrival ? arrival.arrivalTimestamp : (stop.arrivalTimestamp || null));
+                // Coordinates: Prioritize server stop.location, fallback to GPS server
+                const hasServerCoords = stop.location && (stop.location.lat || stop.location.lon);
+                const coords = hasServerCoords 
+                  ? { lat: stop.location.lat ?? 0, lon: stop.location.lon ?? stop.location.lng ?? 0 }
+                  : (gpsCoords ? { lat: gpsCoords.lat, lon: gpsCoords.lon } : null);
                 
-                // Use arrival data if available, but actualTime is NOT used - only GPS server timestamps
+                // Reached time: Prioritize server actualTime/arrivalTimestamp, fallback to GPS server
+                const serverArrivalTs = stop.arrivalTimestamp || (arrival?.arrivalTimestamp);
+                const serverActualTime = stop.actualTime || (arrival ? null : null);
+                const gpsTimestamp = gpsCoords?.timestamp;
+                const finalArrivalTimestamp = serverArrivalTs || gpsTimestamp;
+                const formatTs = (ts: string | Date) => {
+                  try {
+                    const d = new Date(ts);
+                    return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+                  } catch { return null; }
+                };
+                const finalActualTime = serverActualTime ?? (arrival?.arrivalTimestamp ? formatTs(arrival.arrivalTimestamp) : null) ?? gpsCoords?.time ?? null;
+                
                 return {
                   ...stop,
-                  actualTime: null, // Not used - only GPS server timestamps are used
-                  arrivalTimestamp: gpsTimestamp, // Use GPS timestamp from MongoDB Atlas
-                  delay: arrival && arrival.delay !== undefined ? arrival.delay : (stop.delay !== null && stop.delay !== undefined ? stop.delay : null),
+                  location: coords || stop.location || { lat: 0, lon: 0 },
+                  actualTime: finalActualTime,
+                  arrivalTimestamp: finalArrivalTimestamp,
+                  delay: arrival && arrival.delay !== undefined ? arrival.delay : (stop.delay ?? null),
                   status: arrival ? arrival.status : (stop.status || 'pending'),
-                  // Add GPS coordinates, timestamp, date, and time from MongoDB Atlas
-                  gpsLocation: gpsCoords ? {
-                    lat: gpsCoords.lat,
-                    lon: gpsCoords.lon,
-                    timestamp: gpsCoords.timestamp,
-                    date: gpsCoords.date,
-                    time: gpsCoords.time
-                  } : (stop.location || null)
+                  gpsLocation: coords && (gpsCoords?.timestamp || finalArrivalTimestamp) ? {
+                    lat: coords.lat,
+                    lon: coords.lon,
+                    timestamp: gpsCoords?.timestamp || finalArrivalTimestamp,
+                    date: gpsCoords?.date || (finalArrivalTimestamp ? new Date(finalArrivalTimestamp).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : ''),
+                    time: gpsCoords?.time || (finalArrivalTimestamp ? new Date(finalArrivalTimestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : '')
+                  } : null
                 };
               });
               
@@ -1949,38 +1965,27 @@ export default function ArrivalsDashboard() {
                       // Get GPS timestamp if available (from nearest GPS coordinate)
                       const gpsData = gpsTimestamps[route.routeId]?.[stop.name];
                       
-                      // Show arrival time based on GPS data from MongoDB Atlas
-                      // Priority: GPS time from MongoDB Atlas > GPS timestamp from server > arrivalTimestamp from database
+                      // Show reached/arrival time - prioritize server data (routes, coordinates, reached time from backend)
+                      // Priority: Server actualTime/arrivalTimestamp > GPS time from MongoDB > gpsData
                       let displayTime = '-';
                       
-                      // Priority 1: Use GPS time from MongoDB Atlas (stop.gpsLocation.time) - ALWAYS show if available
-                      if (stop.gpsLocation?.time) {
-                        displayTime = stop.gpsLocation.time;
-                        console.log(`✅ Using GPS time from MongoDB for ${stop.name}: ${displayTime}`);
+                      // Priority 1: Server's actualTime or arrivalTimestamp (from backend Arrival records)
+                      if (stop.actualTime) {
+                        displayTime = stop.actualTime;
+                      } else if (stop.arrivalTimestamp) {
+                        try {
+                          displayTime = formatLocalTime(stop.arrivalTimestamp);
+                        } catch (e) {
+                          displayTime = '-';
+                        }
                       }
-                      // Priority 2: Use GPS timestamp from server if available (gpsData.time)
-                      else if (gpsData && gpsData.time) {
-                        // For historical dates, always show
-                        // For today, only show if tracker is online
-                        if (!isToday || trackerIsOnline) {
-                          displayTime = gpsData.time;
-                          console.log(`✅ Using GPS time from gpsData for ${stop.name}: ${displayTime}`);
-                        }
-                      } 
-                      // Priority 3: Use arrivalTimestamp from database/arrival map
-                      else if (stop.arrivalTimestamp) {
-                        // For historical dates, always show
-                        // For today, only show if tracker is online
-                        if (!isToday || trackerIsOnline) {
-                          try {
-                            // Format arrival timestamp from database
-                            displayTime = formatLocalTime(stop.arrivalTimestamp);
-                            console.log(`✅ Using arrivalTimestamp for ${stop.name}: ${displayTime}`);
-                          } catch (e) {
-                            console.error(`Error formatting arrival timestamp for ${stop.name}:`, e);
-                            displayTime = '-';
-                          }
-                        }
+                      // Priority 2: GPS time from MongoDB Atlas (stop.gpsLocation.time)
+                      else if (stop.gpsLocation?.time) {
+                        displayTime = stop.gpsLocation.time;
+                      }
+                      // Priority 3: GPS timestamp from external GPS server (gpsData.time)
+                      else if (gpsData?.time && (!isToday || trackerIsOnline)) {
+                        displayTime = gpsData.time;
                       }
                       
                       // Debug log for stops
@@ -1995,12 +2000,18 @@ export default function ArrivalsDashboard() {
                             <MapPin size={14} color={isDark ? '#94A3B8' : '#64748B'} />
                             <View style={{ flex: 1 }}>
                               <Text style={styles.stopName}>{stop.name}</Text>
-                              {/* Display GPS coordinates from MongoDB Atlas */}
-                              {(stop.gpsLocation || stop.location) && (
-                                <Text style={[styles.coordinateText, { color: isDark ? '#64748B' : '#94A3B8' }]}>
-                                  {(stop.gpsLocation || stop.location).lat?.toFixed(6)}, {(stop.gpsLocation || stop.location).lon?.toFixed(6)}
-                                </Text>
-                              )}
+                              {/* Display bus stop coordinates from server (route/arrival data) */}
+                              {(() => {
+                                const loc = stop.gpsLocation || stop.location;
+                                const lat = loc?.lat;
+                                const lon = loc?.lon ?? (loc as any)?.lng;
+                                if (lat == null || lon == null) return null;
+                                return (
+                                  <Text style={[styles.coordinateText, { color: isDark ? '#64748B' : '#94A3B8' }]}>
+                                    {Number(lat).toFixed(6)}, {Number(lon).toFixed(6)}
+                                  </Text>
+                                );
+                              })()}
                             </View>
                       </View>
                           <Text style={styles.scheduledTime}>{stop.scheduledTime}</Text>
