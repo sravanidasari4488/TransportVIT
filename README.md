@@ -111,12 +111,3 @@ Frontend/
 │   └── routes/            # Per-route map screens (VV1-10, GV1-10)
 └── src/services/          # API and socket service layers
 ```
- 
-## Known Limitations
- 
-A few things worth knowing going in, rather than discovering in an interview:
- 
-- No geospatial (`2dsphere`) indexes — proximity math runs in application code.
-- No throttling/debouncing on Socket.IO emits.
-- Most backend endpoints are unauthenticated at the API layer; access control currently lives in the frontend.
-- Firebase and Clerk are present as dependencies from earlier iterations but aren't part of the active auth flow.
