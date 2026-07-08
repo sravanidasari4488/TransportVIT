@@ -1,14 +1,29 @@
 const BusRoute = require("../models/BusRoute");
 const GpsLocation = require("../models/GpsLocation");
 const RouteStop = require("../models/RouteStop");
+const User = require("../models/User");
 
 // Get all routes
 exports.getAllRoutes = async (req, res) => {
     try {
         const routes = await BusRoute.find({ isActive: true }).sort({ routeId: 1 });
+        const counts = await User.aggregate([
+            { $match: { role: "student", busRoute: { $ne: null } } },
+            { $group: { _id: "$busRoute", count: { $sum: 1 } } },
+        ]);
+        const countMap = Object.fromEntries(counts.map((c) => [c._id, c.count]));
+
+        const routesWithCounts = routes.map((route) => {
+            const doc = route.toObject();
+            doc.studentCount =
+                countMap[doc.routeId] ??
+                (Array.isArray(doc.students) ? doc.students.length : 0);
+            return doc;
+        });
+
         res.json({
             success: true,
-            routes
+            routes: routesWithCounts,
         });
     } catch (err) {
         res.status(500).json({ error: err.message });

@@ -4,7 +4,6 @@ import { useTheme } from '../(auth)/context/ThemeContext';
 import { colors } from '../constants/colors';
 import { View, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-
 function TabLayout() {
   const { isDark } = useTheme();
   const theme = colors[isDark ? 'dark' : 'light'];
@@ -41,7 +40,7 @@ function TabLayout() {
           const theme = colors[isDark ? 'dark' : 'light'];
           return (
             <LinearGradient
-              colors={isDark ? theme.gradientOmbre : ['#FFFFFF', '#F5F3FF', '#E9D5FF']}
+              colors={(isDark ? theme.gradientOmbre : ['#FFFFFF', '#F5F3FF', '#E9D5FF']) as any}
               style={StyleSheet.absoluteFill}
               start={{ x: 0, y: 0 }}
               end={{ x: 0, y: 1 }}
@@ -104,9 +103,9 @@ function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="csv-upload"
+        name="ManageStudents"
         options={{
-          title: 'Upload',
+          title: 'Students',
           tabBarIcon: ({ color, size, focused }) => (
             <View style={[
               styles.iconContainer,
@@ -119,6 +118,24 @@ function TabLayout() {
               />
             </View>
           ),
+        }}
+      />
+      <Tabs.Screen
+        name="csv-upload"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="RouteStudents"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="upload-route"
+        options={{
+          href: null,
         }}
       />
       <Tabs.Screen

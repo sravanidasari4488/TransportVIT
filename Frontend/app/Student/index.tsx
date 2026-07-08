@@ -34,6 +34,8 @@ import {
 import { useTheme } from '../(auth)/context/ThemeContext';
 import { useAuth } from '../(auth)/context/AuthProvider';
 import { colors } from '../constants/colors';
+import StudentRouteGate from '../components/StudentRouteGate';
+import { getStudentAssignedRoute } from '../utils/routeAccess';
 
 const { width } = Dimensions.get('window');
 
@@ -71,6 +73,7 @@ export default function HomePage() {
   const router = useRouter();
   const { isDark } = useTheme();
   const { user, selectedRouteId } = useAuth();
+  const assignedRoute = getStudentAssignedRoute(user, selectedRouteId);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
   // Initialize with default weather so it always shows something
@@ -188,10 +191,8 @@ export default function HomePage() {
   };
 
   const handleViewRoutePress = () => {
-    if (selectedRouteId) {
-      router.push(`/routes/${selectedRouteId.toLowerCase()}`);
-    } else {
-      router.push('/Student/select-route');
+    if (assignedRoute) {
+      router.push(`/routes/${assignedRoute.toLowerCase()}` as any);
     }
   };
 
@@ -217,6 +218,7 @@ export default function HomePage() {
   const theme = colors[isDark ? 'dark' : 'light'];
 
   return (
+    <StudentRouteGate>
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={theme.primary} />
       
@@ -279,10 +281,10 @@ export default function HomePage() {
                 </View>
                 <View style={styles.mainCardText}>
                   <Text style={styles.mainCardTitle}>
-                    {selectedRouteId ? `Route ${selectedRouteId}` : 'Select Your Route'}
+                    {assignedRoute ? `Route ${assignedRoute}` : 'No route assigned'}
                   </Text>
                   <Text style={styles.mainCardSubtitle}>
-                    {selectedRouteId ? 'Tap to track live location' : 'Choose your bus route to start'}
+                    {assignedRoute ? 'Tap to track live location' : 'Contact admin for route assignment'}
                   </Text>
                 </View>
               </View>
@@ -414,7 +416,7 @@ export default function HomePage() {
             >
               <Bus size={22} color="#FFFFFF" />
               <Text style={styles.ctaText}>
-                {selectedRouteId ? `Track ${selectedRouteId}` : 'Get Started'}
+                {assignedRoute ? `Track ${assignedRoute}` : 'Awaiting route'}
               </Text>
               <ArrowRight size={20} color="#FFFFFF" />
             </LinearGradient>
@@ -422,6 +424,7 @@ export default function HomePage() {
         </Animated.View>
       </ScrollView>
     </View>
+    </StudentRouteGate>
   );
 }
 

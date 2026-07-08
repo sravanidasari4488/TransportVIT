@@ -6,7 +6,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../(auth)/context/ThemeContext';
 import { useAuth } from '../(auth)/context/AuthProvider';
 import { colors } from '../constants/colors';
-import { API_CONFIG } from '../config/api';
+import { API_CONFIG, getApiCandidates } from '../config/api';
+import StudentRouteGate from '../components/StudentRouteGate';
+import { getStudentAssignedRoute } from '../utils/routeAccess';
 import { io, Socket } from 'socket.io-client';
 
 const { width, height } = Dimensions.get('window');
@@ -53,6 +55,7 @@ export default function StudentArrivals() {
   const [gpsTimestamps, setGpsTimestamps] = useState<Record<string, { timestamp: string; time: string }>>({});
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const effectiveRouteId = getStudentAssignedRoute(user, selectedRouteId) || '';
 
   // Animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -83,6 +86,21 @@ export default function StudentArrivals() {
     const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
+  };
+
+  const fetchJsonWithFallback = async (endpoint: string) => {
+    const urls = getApiCandidates(endpoint);
+    let lastError: any = null;
+    for (const url of urls) {
+      try {
+        const res = await fetch(url);
+        const json = await res.json();
+        return { res, json, url };
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError || new Error('Network request failed');
   };
 
   // Route stops map (same as Faculty dashboard)
@@ -348,21 +366,20 @@ export default function StudentArrivals() {
 
   // Fetch route with stops and arrivals
   const fetchRouteWithStops = async () => {
-    if (!selectedRouteId) {
-      Alert.alert('No Route Selected', 'Please select your bus route first.');
-      router.push('/Student/select-route');
+    if (!effectiveRouteId) {
+      Alert.alert('No route assigned', 'Please contact admin to assign your bus route.');
       return;
     }
 
     setLoading(true);
     try {
-      const routeIdUpper = selectedRouteId.toUpperCase();
+      const routeIdUpper = effectiveRouteId;
       
       // Fetch route stops
-      let response = await fetch(`${API_CONFIG.BASE_URL}/api/routes/${routeIdUpper}/stops-with-arrivals`);
-      
-      if (!response.ok && response.status === 404) {
-        response = await fetch(`${API_CONFIG.BASE_URL}/api/routes/${selectedRouteId}/stops-with-arrivals`);
+      try {
+        await fetchJsonWithFallback(`/api/routes/${routeIdUpper}/stops-with-arrivals`);
+      } catch {
+        // We still render from local route map even if this endpoint fails.
       }
 
       let stops: StopWithArrival[] = [];
@@ -371,15 +388,12 @@ export default function StudentArrivals() {
       // Fetch arrivals for this route
       let arrivalData: any[] = [];
       try {
-        const arrivalsResponse = await fetch(`${API_CONFIG.BASE_URL}/api/arrivals/route/${selectedRouteId.toLowerCase()}/today`);
-        if (arrivalsResponse.ok) {
-          const arrivalsResult = await arrivalsResponse.json();
-          if (arrivalsResult.success && arrivalsResult.data) {
-            arrivalData = Array.isArray(arrivalsResult.data) ? arrivalsResult.data : [];
-          }
+        const { res: arrivalsResponse, json: arrivalsResult } = await fetchJsonWithFallback(`/api/arrivals/route/${routeIdUpper.toLowerCase()}/today`);
+        if (arrivalsResponse.ok && arrivalsResult.success && arrivalsResult.data) {
+          arrivalData = Array.isArray(arrivalsResult.data) ? arrivalsResult.data : [];
         }
       } catch (err) {
-        console.warn(`Could not fetch arrivals for ${selectedRouteId}:`, err);
+        console.warn(`Could not fetch arrivals for ${routeIdUpper}:`, err);
       }
 
       // Create arrival map
@@ -524,7 +538,7 @@ export default function StudentArrivals() {
 
   // Socket connection for real-time updates
   useEffect(() => {
-    if (!selectedRouteId) return;
+    if (!effectiveRouteId) return;
 
     const socketUrl = API_CONFIG.BASE_URL.replace('/api', '');
     const newSocket = io(socketUrl, {
@@ -534,7 +548,7 @@ export default function StudentArrivals() {
     newSocket.on('connect', () => {
       console.log('✅ Socket connected');
       setSocketConnected(true);
-      newSocket.emit('join-route', { routeId: selectedRouteId });
+      newSocket.emit('join-route', { routeId: effectiveRouteId });
     });
 
     newSocket.on('disconnect', () => {
@@ -544,7 +558,7 @@ export default function StudentArrivals() {
 
     newSocket.on('arrival-update', (data: any) => {
       console.log('📥 Received arrival update:', data);
-      if (data.routeId && data.routeId.toUpperCase() === selectedRouteId.toUpperCase()) {
+      if (data.routeId && data.routeId.toUpperCase() === effectiveRouteId.toUpperCase()) {
         fetchRouteWithStops();
       }
     });
@@ -555,21 +569,21 @@ export default function StudentArrivals() {
     return () => {
       newSocket.disconnect();
     };
-  }, [selectedRouteId]);
+  }, [effectiveRouteId]);
 
   // Fetch route on mount and when date changes
   useEffect(() => {
-    if (selectedRouteId) {
+    if (effectiveRouteId) {
       fetchRouteWithStops();
     }
-  }, [selectedRouteId, selectedDate]);
+  }, [effectiveRouteId, selectedDate]);
 
   // Update GPS timestamps periodically
   useEffect(() => {
-    if (!route || !selectedRouteId) return;
+    if (!route || !effectiveRouteId) return;
 
     const updateGpsTimestamps = async () => {
-      const routeIdUpper = selectedRouteId.toUpperCase();
+      const routeIdUpper = effectiveRouteId;
       const routeToGpsMap: Record<string, string> = {
         'VV1': 'VV-11',
         'VV2': 'VV-11',
@@ -638,7 +652,7 @@ export default function StudentArrivals() {
     updateGpsTimestamps();
     const interval = setInterval(updateGpsTimestamps, 30000);
     return () => clearInterval(interval);
-  }, [route, selectedDate, selectedRouteId]);
+  }, [route, selectedDate, effectiveRouteId]);
 
   const handleManualRefresh = async () => {
     await fetchRouteWithStops();
@@ -646,34 +660,18 @@ export default function StudentArrivals() {
 
   const theme = colors[isDark ? 'dark' : 'light'];
 
-  if (!selectedRouteId) {
-    return (
-      <View style={[styles.container, { backgroundColor: theme.background }]}>
-        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={theme.primary} />
-        <View style={styles.emptyContainer}>
-          <Bus size={64} color={theme.primary} />
-          <Text style={[styles.emptyText, { color: theme.text }]}>No Route Selected</Text>
-          <Text style={[styles.emptySubtext, { color: theme.textSecondary }]}>
-            Please select your bus route first
-          </Text>
-          <TouchableOpacity
-            style={[styles.selectButton, { backgroundColor: theme.primary }]}
-            onPress={() => router.push('/Student/select-route')}
-          >
-            <Text style={styles.selectButtonText}>Select Route</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
+  if (!effectiveRouteId) {
+    return <StudentRouteGate><View /></StudentRouteGate>;
   }
 
   return (
+    <StudentRouteGate>
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={theme.primary} />
 
       {/* Header */}
       <LinearGradient
-        colors={theme.gradientOmbreHeader || theme.gradientOmbre}
+        colors={(theme.gradientOmbreHeader || theme.gradientOmbre) as any}
         style={styles.header}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -689,7 +687,7 @@ export default function StudentArrivals() {
         >
           <View style={styles.headerTitleContainer}>
             <Text style={styles.headerTitle}>Route Arrivals</Text>
-            <Text style={styles.headerSubtitle}>{selectedRouteId.toUpperCase()}</Text>
+            <Text style={styles.headerSubtitle}>{effectiveRouteId.toUpperCase()}</Text>
           </View>
           <TouchableOpacity
             style={styles.refreshButton}
@@ -892,6 +890,7 @@ export default function StudentArrivals() {
         )}
       </ScrollView>
     </View>
+    </StudentRouteGate>
   );
 }
 

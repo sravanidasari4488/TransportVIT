@@ -5,6 +5,10 @@ const router = express.Router();
 router.use("/gps", require("./gps"));
 router.use("/stops", require("./stops"));
 
+// Auth and admin
+router.use("/auth", require("./auth"));
+router.use("/admin", require("./admin"));
+
 // Enhanced routes
 router.use("/users", require("./users"));
 router.use("/routes", require("./routes"));

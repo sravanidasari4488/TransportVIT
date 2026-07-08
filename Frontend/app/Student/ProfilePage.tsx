@@ -120,7 +120,7 @@ function ProfilePage() {
           onPress: async () => {
             try {
               await logout();
-              router.replace('/login');
+              router.replace('/(auth)');
             } catch (error) {
               Alert.alert('Logout Failed', 'An error occurred while logging out.');
             }

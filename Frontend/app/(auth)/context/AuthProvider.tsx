@@ -1,426 +1,229 @@
-import React, { createContext, useContext, useState, useEffect} from 'react';
-import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  signOut,
-  onAuthStateChanged,
-  updateProfile,
-  
-} from 'firebase/auth';
-//import { doc, setDoc,getDoc,updateDoc } from 'firebase/firestore';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { auth, db, } from '../../config/firebase';
-import { User, AuthError, } from '../../types/auth';
-import { sendPasswordResetEmail } from 'firebase/auth';
-import { getApiUrl, API_CONFIG } from '../../config/api';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { API_CONFIG, getApiCandidates } from "../../config/api";
+import { AuthError, User } from "../../types/auth";
 
-interface AuthContextType {
+type AuthContextType = {
   user: User | null;
-  
+  token: string | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string) => Promise<void>;
-  logout: () => Promise<void>;
-  updateUserProfile: (data: { displayName?: string; photoURL?: string; phoneNumber?: string; department?: string; office?: string }) => Promise<void>;
-  uploadProfileImage: (uri: string) => Promise<string>;
   error: AuthError | null;
-  clearError: () => void;
   selectedRouteId: string | null;
-  setSelectedRouteId: (routeId: string) => Promise<void>;
   userInfo: any;
   setUserInfo: React.Dispatch<React.SetStateAction<any>>;
-
-   
-}
+  clearError: () => void;
+  login: (username: string, password: string, role: "admin" | "student") => Promise<User>;
+  register: (email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  setSelectedRouteId: (routeId: string) => Promise<void>;
+  requestPasswordOtp: (regNo: string) => Promise<void>;
+  verifyOtpAndResetPassword: (regNo: string, otp: string, newPassword: string) => Promise<void>;
+  changePasswordFirstLogin: (regNo: string, oldPassword: string, newPassword: string) => Promise<void>;
+  updateUserProfile: (data: any) => Promise<void>;
+  uploadProfileImage: (uri: string) => Promise<string>;
+  setPickingFile: (picking: boolean) => void;
+  isPickingFile: () => boolean;
+};
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AUTH_USER_KEY = "auth_user";
+const AUTH_TOKEN_KEY = "auth_token";
 
-const saveRouteToMongoDB = async (userId: string, routeId: string) => {
-  try {
-    const token = await auth.currentUser?.getIdToken();
-    const response = await fetch(`${API_CONFIG.BASE_URL}/api/users/${userId}/preferences`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({
-        selectedRoute: routeId,
-      })
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to save route');
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('Error saving route to MongoDB:', error);
-    throw error;
-  }
-};
+/** Shared guard: true while system file picker (e.g. Google Drive) has app in background */
+export const isPickingFileRef = { current: false };
 
-const fetchRouteFromMongoDB = async (userId: string) => {
-  // First check local storage (fastest and always available)
-  try {
-    const localRoute = await AsyncStorage.getItem(`selectedRoute_${userId}`);
-    if (localRoute) {
-      return localRoute;
-    }
-  } catch (storageError) {
-    console.warn('Error reading from AsyncStorage:', storageError);
-  }
-  
-  // Then try backend (optional)
-  try {
-    const token = await auth.currentUser?.getIdToken();
-    if (!token) return null;
-    
-    // Add timeout to prevent hanging requests
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-    
+const parseErr = (e: any): AuthError => ({ code: e?.code || "auth/error", message: e?.message || "Something went wrong" });
+
+const fetchJsonWithFallback = async (endpoint: string, options: RequestInit) => {
+  let lastError: any = null;
+  const urls = getApiCandidates(endpoint);
+
+  for (const url of urls) {
     try {
-      const response = await fetch(`${API_CONFIG.BASE_URL}/api/users/${userId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        signal: controller.signal,
-      });
-      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4500);
+      const response = await fetch(url, { ...options, signal: controller.signal });
       clearTimeout(timeoutId);
-      
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success && data.user?.selectedRoute) {
-          // Save to local storage for future use
-          await AsyncStorage.setItem(`selectedRoute_${userId}`, data.user.selectedRoute);
-          return data.user.selectedRoute;
-        }
-      }
-    } catch (fetchError: any) {
-      clearTimeout(timeoutId);
-      if (fetchError.name !== 'AbortError') {
-        // Backend unavailable, but we already checked local storage
-        console.log('Backend unavailable, using local storage');
-      }
+      const data = await response.json();
+      return { response, data };
+    } catch (error) {
+      lastError = error;
     }
-    
-    return null;
-  } catch (error: any) {
-    // Backend error, but local storage already checked
-    return null;
   }
+
+  throw lastError || new Error("Network request failed");
 };
-const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<AuthError | null>(null);
   const [selectedRouteId, setSelectedRouteIdState] = useState<string | null>(null);
   const [userInfo, setUserInfo] = useState<any>({});
+  const setPickingFile = useCallback((picking: boolean) => {
+    isPickingFileRef.current = picking;
+  }, []);
 
-
+  const isPickingFile = useCallback(() => isPickingFileRef.current, []);
 
   useEffect(() => {
-  const unsubscribe = onAuthStateChanged(auth, async(firebaseUser) => {
-    if (firebaseUser) {
-      // Get Google provider profile photo if available
-      const googleProviderData = firebaseUser.providerData.find(
-        (provider) => provider.providerId === 'google.com'
-      );
-      const photoURL = googleProviderData?.photoURL || firebaseUser.photoURL;
-
-      const userData: User = {
-        uid: firebaseUser.uid,
-        email: firebaseUser.email || '',
-        displayName: firebaseUser.displayName,
-        photoURL,
-        emailVerified: firebaseUser.emailVerified,
-      };
-      setUser(userData);
+    (async () => {
       try {
-        const route = await fetchRouteFromMongoDB(firebaseUser.uid);
-        setSelectedRouteIdState(route);
-      } catch (err) {
-        console.error('Error fetching user route:', err);
+        await AsyncStorage.multiRemove([AUTH_USER_KEY, AUTH_TOKEN_KEY]);
+        setUser(null);
+        setToken(null);
         setSelectedRouteIdState(null);
+      } finally {
+        setIsLoading(false);
       }
-      // Fetch route from Firestore
-      // const fetchUserData = async () => {
-      //   try {
-      //     const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-      //     if (userDoc.exists()) {
-      //       const data = userDoc.data();
-      //       setSelectedRouteIdState(data.route || null);
-      //     } else {
-      //       setSelectedRouteIdState(null);
-      //     }
-      //   } catch (err) {
-      //     console.error('Error fetching user route:', err);
-      //     setSelectedRouteIdState(null);
-      //   }};
-       // fetchUserData();
-    } 
-    else {
-      setUser(null);
-    }
-    setIsLoading(false);
-    
-  });
+    })();
+  }, []);
 
-  return unsubscribe;
-}, []);
+  const clearError = () => setError(null);
 
-
-  const parseAuthError = (error: any): AuthError => ({
-    code: error.code || 'unknown',
-    message: error.message || 'An unknown error occurred',
-  });
-
-  const clearError = () => {
-    setError(null);
+  const persistAuth = async (nextUser: User, nextToken: string) => {
+    const busRoute = nextUser.busRoute
+      ? String(nextUser.busRoute).trim().toUpperCase().replace(/\s+/g, "")
+      : null;
+    const normalizedUser: User = { ...nextUser, busRoute };
+    setUser(normalizedUser);
+    setToken(nextToken);
+    setSelectedRouteIdState(busRoute);
+    await AsyncStorage.multiSet([
+      [AUTH_USER_KEY, JSON.stringify(normalizedUser)],
+      [AUTH_TOKEN_KEY, nextToken],
+    ]);
   };
 
-  const validateEmail = (email: string): boolean => {
-    const validDomains = ['@vitapstudent.ac.in', '@vitap.ac.in'];
-    return validDomains.some(domain => email.endsWith(domain));
-  };
-
-  const login = async (email: string, password: string) => {
+  const login = async (username: string, password: string, role: "admin" | "student"): Promise<User> => {
     try {
       setIsLoading(true);
       clearError();
 
-      if (!validateEmail(email)) {
-        throw {
-          code: 'auth/invalid-domain',
-          message: 'Only @vitapstudent.ac.in and @vitap.ac.in email domains are allowed',
-        };
-      }
-
-      await signInWithEmailAndPassword(auth, email, password);
-    } catch (error: any) {
-      setError(parseAuthError(error));
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const register = async (email: string, password: string) => {
-    try {
-      setIsLoading(true);
-      clearError();
-
-      if (!validateEmail(email)) {
-        throw {
-          code: 'auth/invalid-domain',
-          message: 'Only @vitapstudent.ac.in and @vitap.ac.in email domains are allowed',
-        };
-      }
-
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-
-      const firstName = email.split('@')[0].split('.')[0];
-      const displayName = firstName.charAt(0).toUpperCase() + firstName.slice(1);
-
-      await updateProfile(userCredential.user, {
-        displayName: displayName,
+      const { response, data } = await fetchJsonWithFallback("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password, role }),
       });
+      if (!response.ok || !data.success) throw new Error(data.error || "Login failed");
 
-      // await setDoc(doc(db, 'users', userCredential.user.uid), {
-      //   email,
-      //   displayName,
-      //   createdAt: new Date(),
-      //   route: '',
-      // });
-    } catch (error: any) {
-      setError(parseAuthError(error));
-      throw error;
+      const busRouteRaw = data.busRoute ?? data.user?.busRoute ?? null;
+      const busRoute = busRouteRaw
+        ? String(busRouteRaw).trim().toUpperCase().replace(/\s+/g, "")
+        : null;
+      const loggedInUser: User = {
+        ...(data.user as User),
+        busRoute,
+        role: data.role || data.user?.role,
+      };
+      await persistAuth(loggedInUser, data.token);
+      return loggedInUser;
+    } catch (e: any) {
+      const parsed = parseErr(e);
+      setError(parsed);
+      throw e;
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const register = async () => {
+    throw new Error("Self-registration disabled. Use admin CSV upload.");
   };
 
   const logout = async () => {
-    try {
-      setIsLoading(true);
-      clearError();
-      await signOut(auth);
-    } catch (error: any) {
-      setError(parseAuthError(error));
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
+    setUser(null);
+    setToken(null);
+    setSelectedRouteIdState(null);
+    await AsyncStorage.multiRemove([AUTH_USER_KEY, AUTH_TOKEN_KEY]);
   };
 
-  const updateUserProfile = async (data: { displayName?: string; photoURL?: string; phoneNumber?: string; department?: string; office?: string }) => {
-    try {
-      setIsLoading(true);
-      clearError();
-
-      if (!auth.currentUser) {
-        throw new Error('No authenticated user');
+  const setSelectedRouteId = async (routeId: string) => {
+    const normalized = routeId.toUpperCase();
+    if (user?.role === "student") {
+      const assigned = (user.busRoute || "").toUpperCase();
+      if (assigned && assigned !== normalized) {
+        return;
       }
-
-      await updateProfile(auth.currentUser, data);
-
-      // const userRef = doc(db, 'users', auth.currentUser.uid);
-      // await setDoc(userRef, data, { merge: true });
-
-      setUser(prev => (prev ? { ...prev, ...data } : null));
-    } catch (error: any) {
-      setError(parseAuthError(error));
-      throw error;
-    } finally {
-      setIsLoading(false);
     }
-  };
-
-  const uploadProfileImage = async (uri: string): Promise<string> => {
-    if (!auth.currentUser) {
-      throw new Error('No authenticated user');
-    }
-
-    try {
-      setIsLoading(true);
-      clearError();
-
-      if (!uri || typeof uri !== 'string' || !uri.startsWith('file:')) {
-        throw new Error(`Invalid image URI: ${uri}`);
-      }
-
-      const response = await fetch(uri);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch image: ${response.statusText}`);
-      }
-
-      const blob = await response.blob();
-
-      if (blob.size === 0) {
-        throw new Error('Image blob is empty');
-      }
-
-      // Create FormData for file upload
-      const formData = new FormData();
-      formData.append('image', blob, 'profile-image.jpg');
-      formData.append('userId', auth.currentUser.uid);
-
-      // Upload to MongoDB backend
-      const apiUrl = getApiUrl(API_CONFIG.ENDPOINTS.UPLOAD_PROFILE_IMAGE);
-      console.log('Uploading to:', apiUrl);
-      
-      const uploadResponse = await fetch(apiUrl, {
-        method: 'POST',
-        body: formData,
-        headers: {
-          'Authorization': `Bearer ${await auth.currentUser.getIdToken()}`
-        }
-      });
-
-      console.log('Upload response status:', uploadResponse.status);
-      
-      if (!uploadResponse.ok) {
-        let errorMessage = 'Failed to upload image';
-        try {
-          const errorData = await uploadResponse.json();
-          errorMessage = errorData.error || errorMessage;
-        } catch (e) {
-          console.error('Error parsing response:', e);
-        }
-        throw new Error(errorMessage);
-      }
-
-      const uploadResult = await uploadResponse.json();
-      
-      if (!uploadResult.success) {
-        throw new Error(uploadResult.error || 'Upload failed');
-      }
-
-      // Update user profile with new image URL
-      await updateUserProfile({ photoURL: uploadResult.image.url });
-
-      return uploadResult.image.url;
-    } catch (error: any) {
-      const parsedError = parseAuthError(error);
-      setError(parsedError);
-      throw parsedError;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-
-const resetPassword = async (email: string) => {
-  try {
-    setIsLoading(true);
-    clearError();
-    await sendPasswordResetEmail(auth, email);
-  } catch (error: any) {
-    setError(parseAuthError(error));
-    throw error;
-  } finally {
-    setIsLoading(false);
-  }
-};
- // New: setSelectedRouteId function to save route locally and optionally to backend
-  const saveSelectedRouteId = async (routeId: string) => {
-    setSelectedRouteIdState(routeId);
-
+    setSelectedRouteIdState(normalized);
     if (!user) return;
+    const nextUser = { ...user, busRoute: normalized };
+    setUser(nextUser);
+    await AsyncStorage.setItem(AUTH_USER_KEY, JSON.stringify(nextUser));
+  };
 
-    try {
-      // Always save to local storage first (works offline)
-      await AsyncStorage.setItem(`selectedRoute_${user.uid}`, routeId);
-      
-      // Try to save to backend (optional, non-blocking)
-      try {
-        await saveRouteToMongoDB(user.uid, routeId);
-      } catch (backendError) {
-        // Backend unavailable, but route is saved locally
-        console.log('Backend unavailable, route saved locally');
-      }
+  const requestPasswordOtp = async (regNo: string) => {
+    const { response, data } = await fetchJsonWithFallback("/api/auth/forgot-password/request-otp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ regNo }),
+    });
+    if (!response.ok || !data.success) throw new Error(data.error || "Failed to send OTP");
+  };
 
-      setUser((prev) => (prev ? { ...prev, route: routeId } : prev));
-    } catch (err) {
-      console.error('Error saving selected route:', err);
+  const verifyOtpAndResetPassword = async (regNo: string, otp: string, newPassword: string) => {
+    const { response, data } = await fetchJsonWithFallback("/api/auth/forgot-password/verify-otp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ regNo, otp, newPassword }),
+    });
+    if (!response.ok || !data.success) throw new Error(data.error || "Failed to reset password");
+  };
+
+  const changePasswordFirstLogin = async (regNo: string, oldPassword: string, newPassword: string) => {
+    const { response, data } = await fetchJsonWithFallback("/api/auth/change-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ regNo, oldPassword, newPassword }),
+    });
+    if (!response.ok || !data.success) throw new Error(data.error || "Failed to change password");
+
+    if (user) {
+      const updated = { ...user, isFirstLogin: false };
+      setUser(updated);
+      await AsyncStorage.setItem(AUTH_USER_KEY, JSON.stringify(updated));
     }
   };
 
-
-  const value = {
-    user,
-    isLoading,
-    login,
-    register,
-    logout,
-    updateUserProfile,
-    uploadProfileImage,
-    error,
-    clearError,
-    userInfo,
-  setUserInfo,
-  selectedRouteId,
-  setSelectedRouteId: saveSelectedRouteId,
-  
-
-    
-
+  const updateUserProfile = async () => {};
+  const uploadProfileImage = async () => {
+    throw new Error("Profile image upload is not configured for custom auth.");
   };
+
+  const value = useMemo(
+    () => ({
+      user,
+      token,
+      isLoading,
+      error,
+      selectedRouteId,
+      userInfo,
+      setUserInfo,
+      clearError,
+      login,
+      register,
+      logout,
+      setSelectedRouteId,
+      requestPasswordOtp,
+      verifyOtpAndResetPassword,
+      changePasswordFirstLogin,
+      updateUserProfile,
+      uploadProfileImage,
+      setPickingFile,
+      isPickingFile,
+    }),
+    [user, token, isLoading, error, selectedRouteId, userInfo, setPickingFile, isPickingFile]
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-};
+}
 
-
-const useAuth = (): AuthContextType => {
+export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error("useAuth must be used within AuthProvider");
   return context;
 };
 
-export { AuthProvider, useAuth };
 export default AuthProvider;

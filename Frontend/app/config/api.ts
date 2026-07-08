@@ -1,23 +1,34 @@
 // API Configuration
 import Constants from 'expo-constants';
 
-// Use local IP from app.json config, fallback to cloud
-const LOCAL_API_URL = Constants.expoConfig?.extra?.apiUrl || 'http://192.168.29.190:4000';
-// Use the correct Railway backend URL that's actually deployed
+const LOCAL_API_URL = Constants.expoConfig?.extra?.apiUrl || '';
 const CLOUD_API_URL = 'https://git-backend-1-production.up.railway.app';
 
-// Try to detect if local backend is available, otherwise use cloud
-// For now, use cloud backend by default since local may not be running
+const expoHostUri =
+  (Constants.expoConfig as any)?.hostUri ||
+  (Constants as any)?.manifest2?.extra?.expoClient?.hostUri ||
+  '';
+const expoHostIp = String(expoHostUri).split(':')[0];
+
+const buildCandidates = (): string[] => {
+  const candidates = [
+    LOCAL_API_URL,
+    expoHostIp ? `http://${expoHostIp}:4000` : '',
+    'http://10.0.2.2:4000',
+    'http://localhost:4000',
+    CLOUD_API_URL,
+  ].filter(Boolean);
+
+  // Keep order and remove duplicates.
+  return Array.from(new Set(candidates));
+};
+
+export const API_BASE_CANDIDATES = buildCandidates();
+
 export const API_CONFIG = {
-  // Use cloud backend URL (change to LOCAL_API_URL if you have local backend running)
-  BASE_URL: CLOUD_API_URL, // Cloud backend URL - using git-backend-1-production
-  
-  // Alternative URLs for different environments
-  // BASE_URL: LOCAL_API_URL, // Local backend URL (uncomment if running locally)
-  // BASE_URL: 'http://localhost:4000', // For web development
-  // BASE_URL: 'http://10.0.2.2:4000', // For Android emulator
-  // BASE_URL: 'http://127.0.0.1:4000', // For iOS simulator
-  
+  // First candidate; use getApiCandidates() for fallback sequence.
+  BASE_URL: API_BASE_CANDIDATES[0] || CLOUD_API_URL,
+
   ENDPOINTS: {
     UPLOAD_PROFILE_IMAGE: '/api/images/upload-profile',
     GET_IMAGE: '/api/images',
@@ -26,7 +37,10 @@ export const API_CONFIG = {
   }
 };
 
-// Helper function to get full API URL
 export const getApiUrl = (endpoint: string): string => {
   return `${API_CONFIG.BASE_URL}${endpoint}`;
+};
+
+export const getApiCandidates = (endpoint: string): string[] => {
+  return API_BASE_CANDIDATES.map((base) => `${base}${endpoint}`);
 };

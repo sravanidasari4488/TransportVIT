@@ -1,24 +1,22 @@
-
 export interface User {
-  uid: string;
+  id: string;
+  regNo: string;
   email: string;
-  displayName: string | null;
-  photoURL: string | null;
-  emailVerified: boolean;
+  name: string;
+  role: "admin" | "student" | "faculty";
+  busRoute?: string | null;
+  dues?: number;
+  paidStatus?: "Paid" | "Unpaid";
+  isFirstLogin?: boolean;
+  photoURL?: string | null;
   phoneNumber?: string;
   department?: string;
   office?: string;
   designation?: string;
+  displayName?: string | null;
 }
 
 export interface AuthError {
   code: string;
   message: string;
-}
-
-// Add this default export to fix the warning:
-import React from 'react';
-
-export default function DummyComponent() {
-  return null;
 }

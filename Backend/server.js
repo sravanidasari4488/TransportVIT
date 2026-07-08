@@ -51,8 +51,18 @@ io.on('connection', (socket) => {
   console.log(`✅ Client connected: ${socket.id}`);
 
   // Join room for a specific route
-  socket.on('join-route', (routeId) => {
-    const normalizedRouteId = routeId.toUpperCase();
+  socket.on('join-route', (payload) => {
+    const rawRouteId =
+      typeof payload === 'string'
+        ? payload
+        : (payload && typeof payload.routeId === 'string' ? payload.routeId : '');
+
+    if (!rawRouteId) {
+      console.warn(`⚠️ Invalid join-route payload from ${socket.id}:`, payload);
+      return;
+    }
+
+    const normalizedRouteId = rawRouteId.toUpperCase();
     const roomName = `route-${normalizedRouteId}`;
     socket.join(roomName);
     console.log(`📍 Client ${socket.id} joined route room: ${roomName} (routeId: ${normalizedRouteId})`);
@@ -62,9 +72,16 @@ io.on('connection', (socket) => {
   });
 
   // Leave route room
-  socket.on('leave-route', (routeId) => {
-    socket.leave(`route-${routeId.toUpperCase()}`);
-    console.log(`📍 Client ${socket.id} left route: ${routeId}`);
+  socket.on('leave-route', (payload) => {
+    const rawRouteId =
+      typeof payload === 'string'
+        ? payload
+        : (payload && typeof payload.routeId === 'string' ? payload.routeId : '');
+    if (!rawRouteId) return;
+
+    const normalizedRouteId = rawRouteId.toUpperCase();
+    socket.leave(`route-${normalizedRouteId}`);
+    console.log(`📍 Client ${socket.id} left route: ${normalizedRouteId}`);
   });
 
   socket.on('disconnect', () => {

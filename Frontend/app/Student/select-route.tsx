@@ -4,8 +4,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../(auth)/context/AuthProvider';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../(auth)/context/ThemeContext';
-import { API_CONFIG } from '../config/api';
-import { auth } from '../config/firebase';
 
 const routes = [
   { name: "VV1", city: "Vijayawada" },
@@ -31,7 +29,7 @@ const routes = [
 ];
 
 export default function SelectRoute() {
-  const { user, setSelectedRouteId, selectedRouteId } = useAuth();
+  const { user, setSelectedRouteId } = useAuth();
   const { isDark } = useTheme();
   const [selectedRoute, setSelectedRoute] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -44,50 +42,16 @@ export default function SelectRoute() {
 
   const checkExistingRoute = async () => {
     try {
-      if (!user?.uid) {
+      const assignedRoute = user?.busRoute?.toUpperCase?.();
+      if (!assignedRoute) {
         setCheckingRoute(false);
         return;
       }
 
-      // First check local storage (fastest)
-      const localRoute = await AsyncStorage.getItem(`selectedRoute_${user.uid}`);
-      if (localRoute) {
-        setSelectedRouteId(localRoute);
-        router.replace('/Student');
-        setCheckingRoute(false);
-        return;
-      }
-
-      // Then try backend (if available)
-      try {
-        const token = await auth.currentUser?.getIdToken();
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-        
-        const response = await fetch(`${API_CONFIG.BASE_URL}/api/users/${user.uid}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success && data.user?.selectedRoute) {
-            // Save to local storage for future use
-            await AsyncStorage.setItem(`selectedRoute_${user.uid}`, data.user.selectedRoute);
-            setSelectedRouteId(data.user.selectedRoute);
-            router.replace('/Student');
-            return;
-          }
-        }
-      } catch (backendError) {
-        // Backend unavailable, continue with local storage only
-        console.log('Backend unavailable, using local storage only');
-      }
+      await AsyncStorage.setItem(`selectedRoute_`, assignedRoute);
+      await setSelectedRouteId(assignedRoute);
+      setSelectedRoute(assignedRoute);
+      router.replace('/Student');
     } catch (error) {
       console.error('Error checking route:', error);
     } finally {
@@ -96,52 +60,13 @@ export default function SelectRoute() {
   };
 
   const handleSelectRoute = async (routeName: string) => {
-    if (isLoading || !user?.uid) return;
+    if (isLoading || !user?.regNo) return;
     
     setIsLoading(true);
     try {
       // Always save to local storage first (works offline)
-      await AsyncStorage.setItem(`selectedRoute_${user.uid}`, routeName);
+      await AsyncStorage.setItem(`selectedRoute_`, routeName);
       await setSelectedRouteId(routeName);
-      
-      // Try to save to backend (optional, non-blocking)
-      try {
-        const token = await auth.currentUser?.getIdToken();
-        if (token) {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-          
-          // Try to update backend (don't wait for it)
-          fetch(`${API_CONFIG.BASE_URL}/api/users/${user.uid}/preferences`, {
-            method: 'PUT',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              selectedRoute: routeName,
-            }),
-            signal: controller.signal,
-          })
-            .then(async (response) => {
-              clearTimeout(timeoutId);
-              if (response.ok) {
-                console.log('Route saved to backend successfully');
-              } else {
-                console.log('Backend save failed, but route saved locally');
-              }
-            })
-            .catch((error) => {
-              clearTimeout(timeoutId);
-              if (error.name !== 'AbortError') {
-                console.log('Backend unavailable, route saved locally only');
-              }
-            });
-        }
-      } catch (backendError) {
-        // Backend unavailable, but route is already saved locally
-        console.log('Backend unavailable, route saved locally');
-      }
       
       // Redirect immediately (don't wait for backend)
       router.replace('/Student');
@@ -169,62 +94,26 @@ export default function SelectRoute() {
   return (
     <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
       <View style={styles.safeArea}>
-        <Text style={styles.header}>Select your Bus Route</Text>
-        <Text style={styles.subtitle}>Choose the route you use to travel to campus</Text>
+        <Text style={styles.header}>Route is Assigned by Admin</Text>
+        <Text style={styles.subtitle}>Students can only use the route uploaded in CSV/Excel</Text>
 
-        {/* Vijayawada Section */}
         <View style={styles.citySection}>
-          <Text style={styles.cityTitle}>📍 Vijayawada</Text>
+          <Text style={styles.cityTitle}>Assigned Route</Text>
           <View style={styles.routeContainer}>
-            {routes.filter(route => route.city === "Vijayawada").map(route => (
-              <TouchableOpacity 
-                key={route.name} 
-                style={[
-                  styles.routeButton,
-                  selectedRoute === route.name && styles.selectedRouteButton,
-                  isLoading && styles.disabledButton
-                ]} 
-                onPress={() => {
-                  setSelectedRoute(route.name);
-                  handleSelectRoute(route.name);
-                }}
+            {user?.busRoute ? (
+              <TouchableOpacity
+                style={[styles.routeButton, styles.selectedRouteButton, isLoading && styles.disabledButton]}
+                onPress={() => handleSelectRoute((user.busRoute || "").toUpperCase())}
                 activeOpacity={0.7}
                 disabled={isLoading}
               >
-                <Text style={[
-                  styles.routeText,
-                  selectedRoute === route.name && styles.selectedRouteText
-                ]}>{route.name}</Text>
+                <Text style={[styles.routeText, styles.selectedRouteText]}>{user.busRoute.toUpperCase()}</Text>
               </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* Guntur Section */}
-        <View style={styles.citySection}>
-          <Text style={styles.cityTitle}>📍 Guntur</Text>
-          <View style={styles.routeContainer}>
-            {routes.filter(route => route.city === "Guntur").map(route => (
-              <TouchableOpacity 
-                key={route.name} 
-                style={[
-                  styles.routeButton,
-                  selectedRoute === route.name && styles.selectedRouteButton,
-                  isLoading && styles.disabledButton
-                ]} 
-                onPress={() => {
-                  setSelectedRoute(route.name);
-                  handleSelectRoute(route.name);
-                }}
-                activeOpacity={0.7}
-                disabled={isLoading}
-              >
-                <Text style={[
-                  styles.routeText,
-                  selectedRoute === route.name && styles.selectedRouteText
-                ]}>{route.name}</Text>
-              </TouchableOpacity>
-            ))}
+            ) : (
+              <Text style={{ color: isDark ? '#FCA5A5' : '#B91C1C', fontWeight: '600' }}>
+                No route assigned. Contact admin.
+              </Text>
+            )}
           </View>
         </View>
       </View>

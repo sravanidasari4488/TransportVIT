@@ -4,7 +4,6 @@ import { useTheme } from '../(auth)/context/ThemeContext';
 import { colors } from '../constants/colors';
 import { View, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-
 function TabLayout() {
   const { isDark } = useTheme();
   const theme = colors[isDark ? 'dark' : 'light'];
@@ -132,6 +131,12 @@ function TabLayout() {
       />
       <Tabs.Screen
         name="settings"
+        options={{
+          href: null, // Hide from tab bar
+        }}
+      />
+      <Tabs.Screen
+        name="select-route"
         options={{
           href: null, // Hide from tab bar
         }}

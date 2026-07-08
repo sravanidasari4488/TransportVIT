@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback, useMemo } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Animated, Dimensions, StatusBar } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Animated, Dimensions, StatusBar, Alert, ActivityIndicator } from "react-native";
 import { Users, X, Navigation, CircleCheck as CheckCircle, CircleAlert as AlertCircle, ArrowLeft, Bus, Activity, TrendingUp } from "lucide-react-native";
 import { WebView } from "react-native-webview";
 import { LinearGradient } from 'expo-linear-gradient';
@@ -7,8 +7,11 @@ import { useRouter } from 'expo-router';
 import arrivalService from '../../src/services/arrivalService';
 import { API_CONFIG } from '../config/api';
 import { useTheme } from '../(auth)/context/ThemeContext';
+import { useAuth } from '../(auth)/context/AuthProvider';
 import { colors } from '../constants/colors';
+import { getStudentAssignedRoute, isStaffRole, routesMatch } from '../utils/routeAccess';
 import type { BusRouteConfig } from './busRouteTypes';
+import VV1TrackingLayout, { buildVV1TrackingMapHtml } from './VV1TrackingLayout';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -23,10 +26,49 @@ function getDistanceFromLatLonInMeters(lat1: number, lon1: number, lat2: number,
   return R * c;
 }
 
-export default function BusRouteScreen({ routeId, gpsBusId, routeData }: BusRouteConfig) {
+type BusRouteScreenProps = BusRouteConfig & { trackingLayout?: boolean };
+
+function parseScheduleToMinutes(timeStr: string): number {
+  const [time, period] = timeStr.split(" ");
+  const [h, m] = time.split(":").map(Number);
+  let hours24 = h;
+  if (period === "PM" && h !== 12) hours24 += 12;
+  if (period === "AM" && h === 12) hours24 = 0;
+  return hours24 * 60 + m;
+}
+
+export default function BusRouteScreen({ routeId, gpsBusId, routeData, trackingLayout = false }: BusRouteScreenProps) {
   const router = useRouter();
   const { isDark } = useTheme();
+  const { user, selectedRouteId } = useAuth();
   const theme = colors[isDark ? 'dark' : 'light'];
+  const [accessChecked, setAccessChecked] = useState(false);
+
+  useEffect(() => {
+    if (!user) {
+      setAccessChecked(true);
+      return;
+    }
+    if (isStaffRole(user.role)) {
+      setAccessChecked(true);
+      return;
+    }
+    const assigned = getStudentAssignedRoute(user, selectedRouteId);
+    if (!assigned) {
+      setAccessChecked(true);
+      return;
+    }
+    if (!routesMatch(assigned, routeId)) {
+      Alert.alert(
+        "Access denied",
+        "You are not assigned to this route.",
+        [{ text: "OK", onPress: () => router.replace("/Student") }]
+      );
+      return;
+    }
+    setAccessChecked(true);
+  }, [user, selectedRouteId, routeId, router]);
+
   const webViewRef = useRef<WebView>(null);
   const [mapExpanded, setMapExpanded] = useState(false);
   const [currentStop, setCurrentStop] = useState<string | null>(null);
@@ -519,7 +561,10 @@ export default function BusRouteScreen({ routeId, gpsBusId, routeData }: BusRout
   }, [stopArrivalTimes]);
 
   const mapHtml = useMemo(
-    () => `<!DOCTYPE html>
+    () =>
+      trackingLayout
+        ? buildVV1TrackingMapHtml(routeData.title, gpsBusId)
+        : `<!DOCTYPE html>
   <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -571,7 +616,7 @@ export default function BusRouteScreen({ routeId, gpsBusId, routeData }: BusRout
     <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB48fIbQ7fTdXAp-pPf_mjXXAf2BEQMDI0&callback=initMap&callback=initMap"></script>
   </body>
   </html>`,
-    [routeData.title]
+    [trackingLayout, routeData.title, gpsBusId]
   );
 
   const handleMapResize = () => {
@@ -609,6 +654,76 @@ export default function BusRouteScreen({ routeId, gpsBusId, routeData }: BusRout
   const completedStops = Object.keys(stopArrivalTimes).length;
   const totalStops = routeData.stops.length;
   const progressPercentage = (completedStops / totalStops) * 100;
+
+  const trackingMeta = useMemo(() => {
+    const now = new Date();
+    const nowMins = now.getHours() * 60 + now.getMinutes();
+    const lastStop = routeData.stops[routeData.stops.length - 1];
+
+    if (currentStop === "Completed" || completedStops >= totalStops) {
+      return {
+        nextStop: lastStop,
+        etaMins: 0,
+        busStatus: "Arrived" as const,
+      };
+    }
+
+    let nextStop = currentStop || routeData.schedule[0]?.stopName || routeData.stops[0];
+    let etaMins = 12;
+
+    if (currentStop && currentStop !== "Completed") {
+      const sched = routeData.schedule.find(
+        (s) =>
+          s.stopName === currentStop ||
+          s.stopName.toLowerCase() === currentStop.toLowerCase()
+      );
+      if (sched) {
+        etaMins = Math.max(0, parseScheduleToMinutes(sched.time) - nowMins);
+      }
+    } else {
+      for (const item of routeData.schedule) {
+        const schedMins = parseScheduleToMinutes(item.time);
+        if (schedMins >= nowMins) {
+          nextStop = item.stopName;
+          etaMins = Math.max(0, schedMins - nowMins);
+          break;
+        }
+      }
+    }
+
+    return {
+      nextStop,
+      etaMins,
+      busStatus: "En Route" as const,
+    };
+  }, [currentStop, completedStops, totalStops, routeData]);
+
+  if (!accessChecked) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.background, justifyContent: "center", alignItems: "center" }]}>
+        <ActivityIndicator size="large" color={theme.primary} />
+      </View>
+    );
+  }
+
+  if (trackingLayout) {
+    return (
+      <VV1TrackingLayout
+        routeData={routeData}
+        mapHtml={mapHtml}
+        webViewRef={webViewRef}
+        router={router}
+        isLive={isLive}
+        pulseAnim={pulseAnim}
+        trackingMeta={trackingMeta}
+        getStopStatus={getStopStatus}
+        stopArrivalTimes={stopArrivalTimes}
+        mapExpanded={mapExpanded}
+        toggleMapExpansion={toggleMapExpansion}
+        handleMapResize={handleMapResize}
+      />
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>

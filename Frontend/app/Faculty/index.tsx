@@ -46,10 +46,10 @@ const features = [
   },
   {
     icon: BarChart3,
-    title: 'Analytics',
-    subtitle: 'View reports',
+    title: 'Manage Students',
+    subtitle: 'Upload CSV per route',
     color: '#7209B7',
-    route: '/Faculty/arrival-dashboard',
+    route: '/Faculty/ManageStudents',
   },
   {
     icon: Activity,

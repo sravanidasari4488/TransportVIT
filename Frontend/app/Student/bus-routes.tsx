@@ -15,8 +15,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useTheme } from '../(auth)/context/ThemeContext';
 import { useAuth } from '../(auth)/context/AuthProvider';
 import { ArrowLeft, Bus, MapPin, Navigation, ArrowRight, CheckCircle, Sparkles, Clock, Users } from 'lucide-react-native';
-import { API_CONFIG } from '../config/api';
-import { auth } from '../config/firebase';
+import { getApiCandidates } from "../config/api";
 import { colors } from '../constants/colors';
 
 const { width } = Dimensions.get('window');
@@ -31,7 +30,7 @@ const routeCityMap: Record<string, string> = {
 function BusRoutesScreen() {
   const router = useRouter();
   const { isDark } = useTheme();
-  const { user, selectedRouteId } = useAuth();
+  const { user, selectedRouteId, token } = useAuth();
   const [loading, setLoading] = useState(true);
   const [userRoute, setUserRoute] = useState<string | null>(null);
 
@@ -40,7 +39,6 @@ function BusRoutesScreen() {
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
 
   useEffect(() => {
-    fetchUserRoute();
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -62,45 +60,63 @@ function BusRoutesScreen() {
     ]).start();
   }, []);
 
-  const fetchUserRoute = async () => {
-    try {
-      if (!user?.uid) {
-        setLoading(false);
-        return;
-      }
+  useEffect(() => {
+    let mounted = true;
 
-      const token = await auth.currentUser?.getIdToken();
-      const response = await fetch(`${API_CONFIG.BASE_URL}/api/users/${user.uid}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success && data.user?.selectedRoute) {
-          setUserRoute(data.user.selectedRoute);
+    const loadStudentRoute = async () => {
+      try {
+        setLoading(true);
+        if (!token) {
+          if (mounted) setUserRoute((user?.busRoute || selectedRouteId || null)?.toUpperCase?.() || null);
+          return;
         }
+
+        const endpoint = "/api/auth/student/route";
+        const urls = getApiCandidates(endpoint);
+        let resolvedRoute: string | null = null;
+
+        for (const url of urls) {
+          try {
+            const res = await fetch(url, {
+              method: "GET",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+            });
+            const json = await res.json();
+            if (res.ok && json.success && json.route?.routeName) {
+              resolvedRoute = String(json.route.routeName).toUpperCase();
+              break;
+            }
+          } catch {
+            // try next candidate
+          }
+        }
+
+        if (mounted) {
+          setUserRoute(resolvedRoute || (user?.busRoute || selectedRouteId || null)?.toUpperCase?.() || null);
+        }
+      } finally {
+        if (mounted) setLoading(false);
       }
-    } catch (error) {
-      console.error('Error fetching user route:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
+
+    loadStudentRoute();
+    return () => {
+      mounted = false;
+    };
+  }, [token, user?.busRoute, selectedRouteId]);
 
   const handleBackPress = () => {
     router.back();
   };
 
   const handleRoutePress = (routeId: string) => {
-    router.push(`/routes/${routeId.toLowerCase()}`);
+    router.push(`/routes/${routeId.toLowerCase()}` as any);
   };
 
-  const handleChangeRoute = () => {
-    router.push('/Student/select-route');
-  };
+  const handleChangeRoute = () => {};
 
   const theme = colors[isDark ? 'dark' : 'light'];
 
@@ -125,7 +141,7 @@ function BusRoutesScreen() {
         
         {/* Ombre Header */}
         <LinearGradient
-          colors={theme.gradientOmbreHeader || theme.gradientOmbre}
+          colors={(theme.gradientOmbreHeader || theme.gradientOmbre) as any}
           style={styles.header}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -161,28 +177,11 @@ function BusRoutesScreen() {
             <Bus size={64} color={theme.primary} strokeWidth={2} />
           </Animated.View>
           <Animated.Text style={[styles.emptyText, { color: theme.text }, { opacity: fadeAnim }]}>
-            No Route Selected
+            No route assigned
           </Animated.Text>
           <Animated.Text style={[styles.emptySubtext, { color: theme.textSecondary }, { opacity: fadeAnim }]}>
-            Select your bus route to start tracking
+            No route assigned. Please contact admin.
           </Animated.Text>
-          <Animated.View style={{ opacity: fadeAnim }}>
-            <TouchableOpacity 
-              style={styles.selectButton} 
-              onPress={handleChangeRoute}
-              activeOpacity={0.8}
-            >
-              <LinearGradient
-                colors={isDark ? theme.gradientOmbre : ['#3A0CA3', '#2A0A7A', '#1A0A4A']}
-                style={styles.selectButtonGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-              >
-                <MapPin size={20} color="#FFFFFF" />
-                <Text style={styles.selectButtonText}>Select Route</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          </Animated.View>
         </View>
       </View>
     );
@@ -196,7 +195,7 @@ function BusRoutesScreen() {
 
       {/* Header */}
       <LinearGradient
-        colors={theme.gradientOmbreHeader || theme.gradientOmbre}
+        colors={(theme.gradientOmbreHeader || theme.gradientOmbre) as any}
         style={styles.header}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -217,9 +216,9 @@ function BusRoutesScreen() {
             <Text style={styles.headerTitle}>My Route</Text>
             <Text style={styles.headerSubtitle}>{city}</Text>
           </View>
-          <TouchableOpacity style={styles.changeButton} onPress={handleChangeRoute}>
-            <Text style={styles.changeButtonText}>Change</Text>
-          </TouchableOpacity>
+            <View style={styles.changeButton}>
+              <Text style={styles.changeButtonText}>Locked</Text>
+            </View>
         </Animated.View>
       </LinearGradient>
 
@@ -239,7 +238,7 @@ function BusRoutesScreen() {
           ]}
         >
           <LinearGradient
-            colors={isDark ? theme.gradientOmbre : ['#3A0CA3', '#2A0A7A', '#1A0A4A']}
+            colors={(isDark ? theme.gradientOmbre : ['#3A0CA3', '#2A0A7A', '#1A0A4A']) as any}
             style={styles.heroCardGradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
@@ -304,7 +303,7 @@ function BusRoutesScreen() {
             activeOpacity={0.8}
           >
             <LinearGradient
-              colors={[theme.primary + '15', theme.primary + '05']}
+              colors={([theme.primary + '15', theme.primary + '05'] as any)}
               style={styles.actionCardGradient}
             >
               <View style={[styles.actionIcon, { backgroundColor: theme.primary + '20' }]}>
@@ -321,7 +320,7 @@ function BusRoutesScreen() {
             activeOpacity={0.8}
           >
             <LinearGradient
-              colors={[theme.accent + '15', theme.accent + '05']}
+              colors={([theme.accent + '15', theme.accent + '05'] as any)}
               style={styles.actionCardGradient}
             >
               <View style={[styles.actionIcon, { backgroundColor: theme.accent + '20' }]}>
